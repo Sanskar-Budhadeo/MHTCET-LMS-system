@@ -24,6 +24,7 @@ export interface TestAttempt {
   id: string;
   testId: string;
   testName: string;
+  subject?: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' | 'General';
   date: string;
   score: number;
   maxScore: number;
@@ -479,13 +480,7 @@ export interface CalendarEvent {
   subject?: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' | 'General';
 }
 
-export const initialEvents: CalendarEvent[] = [
-  { id: 'e1', title: 'Grand Mock Test 2 (PCMB)', date: '2026-06-20', type: 'Test', subject: 'General' },
-  { id: 'e2', title: 'Live Doubt Session - Calculus & Kinetics', date: '2026-06-22', type: 'Lecture', subject: 'Mathematics' },
-  { id: 'e3', title: 'Daily Target: Wave Optics notes reading', date: '2026-06-19', type: 'Target', subject: 'Physics' },
-  { id: 'e4', title: 'Revision of Reproduction in Plants', date: '2026-06-18', type: 'Target', subject: 'Biology' },
-  { id: 'e5', title: 'Chemistry coordination nomenclature quiz', date: '2026-06-21', type: 'Test', subject: 'Chemistry' }
-];
+export const initialEvents: CalendarEvent[] = [];
 
 // 6. User Notes Canvas Database
 export interface UserNote {

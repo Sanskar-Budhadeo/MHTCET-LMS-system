@@ -24,7 +24,7 @@ interface LmsContextType {
   attempts: TestAttempt[];
   events: CalendarEvent[];
   notes: UserNote[];
-  login: (email: string, role: 'student' | 'parent' | 'admin') => boolean;
+  login: (user: UserProfile, token: string) => void;
   logout: () => void;
   addQuestion: (q: Omit<Question, 'id'>) => void;
   addStudyMaterial: (sm: Omit<StudyMaterial, 'id'>) => void;
@@ -154,46 +154,21 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [attempts, questions]);
 
   // Actions
-  const login = (email: string, role: 'student' | 'parent' | 'admin'): boolean => {
-    const cleanedEmail = email.toLowerCase().trim();
-    // Try to match in mockUsers
-    let matched = mockUsers.find(u => u.email.toLowerCase() === cleanedEmail && u.role === role);
-    
-    // If not found, simulate registration/signup
-    if (!matched) {
-      const name = cleanedEmail.split('@')[0].replace('.', ' ');
-      const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-      matched = {
-        id: 'u_' + Math.random().toString(36).substr(2, 9),
-        name: name.split(' ').map(capitalize).join(' '),
-        email: cleanedEmail,
-        role: role,
-        ...(role === 'student' ? {
-          streak: 1,
-          weakTopics: ['Rotational Dynamics', 'Chemical Kinetics'],
-          strongTopics: ['Oscillations'],
-          loginDates: [new Date().toISOString().split('T')[0]]
-        } : {}),
-        ...(role === 'parent' ? { studentId: 'u_student' } : {})
-      };
-    } else if (role === 'student') {
-      // Update student loginDates and streaks
-      const todayStr = new Date().toISOString().split('T')[0];
-      const dates = matched.loginDates ? [...matched.loginDates] : [];
-      if (!dates.includes(todayStr)) {
-        dates.push(todayStr);
-        // Recalculate streak
-        const streak = matched.streak ? matched.streak + 1 : 1;
-        matched = { ...matched, loginDates: dates, streak: streak };
-      }
-    }
-
-    setActiveUser(matched);
-    return true;
+  const login = (user: UserProfile, token: string) => {
+    localStorage.setItem('mht_cet_token', token);
+    setActiveUser(user);
+    // Reset mock lists for live authenticated session
+    setAttempts([]);
+    setNotes([]);
+    setEvents([]);
   };
 
   const logout = () => {
+    localStorage.removeItem('mht_cet_token');
     setActiveUser(null);
+    setAttempts([]);
+    setNotes([]);
+    setEvents([]);
   };
 
   const addQuestion = (q: Omit<Question, 'id'>) => {
@@ -283,13 +258,17 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttempts(prev => [newAttempt, ...prev]);
 
     // Live backend integration with try/catch fallback
+    const token = localStorage.getItem('mht_cet_token');
     fetch('http://localhost:5000/api/student/analyze-test', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
       },
       body: JSON.stringify({
         testAttemptId: attemptId,
+        subject: attempt.subject,
+        test_name: attempt.testName || 'Practice Quiz',
         scoreData: {
           score: attempt.score,
           maxScore: attempt.maxScore,

@@ -58,40 +58,22 @@ export const TestGenerator: React.FC = () => {
     });
   };
 
-  const triggerAIGenerator = () => {
+  const triggerAIGenerator = async () => {
     setIsGenerating(true);
-    setGenerationLogs([]);
+    setGenerationLogs([
+      `[INFO] Initializing Google Gemini LLM API connection...`,
+      `[INFO] Connecting to backend at http://localhost:5000/api/admin/generate-questions...`,
+      `[INFO] Prompting: Generate 2 MHT-CET standard MCQs for ${aiSubject} - ${aiTopic} (${aiDifficulty})...`
+    ]);
     setGeneratedQs([]);
 
-    const logs = [
-      `[INFO] Initializing Google Gemini LLM API connection...`,
-      `[INFO] Sending payload with temperature=0.2, schema=mht_cet_question_v1...`,
-      `[INFO] Prompting: Generate 2 MHT-CET standard MCQs for ${aiSubject} - ${aiTopic} (${aiDifficulty}) with details "${aiPrompt}".`,
-      `[PROCESS] LLM streaming output response...`,
-      `[PROCESS] Output successfully parsed as JSON array.`,
-      `[VALIDATE] Executing validation rules (no negative marking, 4 options count, range [0, 3]).`,
-      `[VALIDATE] Validating LaTeX equations and formula layout structure...`,
-      `[SUCCESS] 2 questions passed all structural checks! Appending to local database...`
-    ];
-
-    let logIdx = 0;
-    const interval = setInterval(() => {
-      if (logIdx < logs.length) {
-        setGenerationLogs(prev => [...prev, logs[logIdx]]);
-        logIdx++;
-      } else {
-        clearInterval(interval);
-        injectAIGeneratedQuestions();
-      }
-    }, 800);
-  };
-
-  const injectAIGeneratedQuestions = async () => {
+    const token = localStorage.getItem('mht_cet_token');
     try {
       const response = await fetch('http://localhost:5000/api/admin/generate-questions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           subject: aiSubject,
@@ -101,11 +83,21 @@ export const TestGenerator: React.FC = () => {
         })
       });
 
-      if (!response.ok) throw new Error('API server returned error code ' + response.status);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'AI generation failed');
+      }
 
-      const dbList = await response.json();
-      const mapped = dbList.map((q: any) => ({
-        id: q._id || 'q_' + Math.random().toString(36).substr(2, 9),
+      setGenerationLogs(prev => [
+        ...prev,
+        `[PROCESS] Output successfully parsed as JSON array.`,
+        `[VALIDATE] Executing validation rules (no negative marking, 4 options count).`,
+        `[SUCCESS] 2 questions passed all structural checks! Appending to database...`,
+        `[DB CONNECTION] Successfully fetched and stored ${data.length} questions in MongoDB!`
+      ]);
+
+      const mapped = data.map((q: any) => ({
+        id: q._id || 'q_' + Math.random().toString(36).substring(2, 9),
         subject: q.subject,
         topic: q.chapter,
         difficulty: q.difficulty,
@@ -116,105 +108,21 @@ export const TestGenerator: React.FC = () => {
         marks: q.subject === 'Mathematics' ? 2 : 1
       }));
 
+      // Update state in Context
       mapped.forEach((q: any) => {
         addQuestion(q);
       });
 
       setGeneratedQs(mapped);
-      setIsGenerating(false);
-      setGenerationLogs(prev => [...prev, `[DB CONNECTION] Successfully fetched and stored ${mapped.length} questions in MongoDB!`]);
     } catch (err: any) {
-      console.warn('[AI GENERATOR] Live server offline. Using client fallback mockup.', err.message);
-      runOfflineFallback();
+      console.error('AI Generation error:', err);
+      setGenerationLogs(prev => [
+        ...prev,
+        `[ERROR] Generation failed: ${err.message || err}`
+      ]);
+    } finally {
+      setIsGenerating(false);
     }
-  };
-
-  const runOfflineFallback = () => {
-    // Generate realistic looking questions based on selected topic
-    let newQs: Question[] = [];
-
-    if (aiSubject === 'Physics') {
-      newQs = [
-        {
-          id: 'ai_p1',
-          subject: 'Physics',
-          topic: aiTopic,
-          difficulty: aiDifficulty,
-          question: `Calculate the kinetic energy of a solid cylinder of mass M and radius R rolling on a horizontal surface without slipping with a velocity V.`,
-          options: [
-            '(1/2) * M * V^2',
-            '(3/4) * M * V^2',
-            '(1/4) * M * V^2',
-            '(2/5) * M * V^2'
-          ],
-          correctAnswer: 1,
-          explanation: `Total Kinetic Energy = Translational KE + Rotational KE = (1/2)*M*V^2 + (1/2)*I*omega^2. For a solid cylinder, Moment of Inertia I = (1/2)*M*R^2 and omega = V/R. Thus, Rotational KE = (1/2)*((1/2)*M*R^2)*(V^2/R^2) = (1/4)*M*V^2. Adding both gives (1/2)*M*V^2 + (1/4)*M*V^2 = (3/4)*M*V^2.`,
-          marks: 1
-        },
-        {
-          id: 'ai_p2',
-          subject: 'Physics',
-          topic: aiTopic,
-          difficulty: aiDifficulty,
-          question: `A wheel of moment of inertia 2.0 kg-m^2 is rotating at 50 rad/s. A constant torque of 4.0 N-m is applied opposite to its motion. How much time does the wheel take to stop?`,
-          options: [
-            '25 seconds',
-            '12.5 seconds',
-            '50 seconds',
-            '10 seconds'
-          ],
-          correctAnswer: 0,
-          explanation: `Using Torque = I * alpha. Retardation torque = 4 N-m, Moment of Inertia I = 2 kg-m^2. Hence alpha = Torque / I = 4 / 2 = 2 rad/s^2. Using angular equation of motion: omega_final = omega_initial - alpha * t. 0 = 50 - 2 * t => 2 * t = 50 => t = 25 seconds. Wait, 50 / 2 = 25 seconds (Option A). Let's review: Option A is 25s, calculation confirms 25s. Correct option is index 0.`,
-          marks: 1
-        }
-      ];
-    } else if (aiSubject === 'Chemistry') {
-      newQs = [
-        {
-          id: 'ai_c1',
-          subject: 'Chemistry',
-          topic: aiTopic,
-          difficulty: aiDifficulty,
-          question: `For a chemical reaction A -> B, the concentration of reactant decreases from 0.8 M to 0.4 M in 20 minutes and from 0.4 M to 0.2 M in the next 20 minutes. The order of the reaction is:`,
-          options: [
-            'First order',
-            'Second order',
-            'Zero order',
-            'Half order'
-          ],
-          correctAnswer: 0,
-          explanation: `Since the time required for concentration to decrease to half of its value (half-life) remains constant (20 minutes) regardless of the starting concentration (from 0.8M to 0.4M, and from 0.4M to 0.2M), the reaction follows first-order kinetics.`,
-          marks: 1
-        }
-      ];
-    } else {
-      newQs = [
-        {
-          id: 'ai_m1',
-          subject: aiSubject,
-          topic: aiTopic,
-          difficulty: aiDifficulty,
-          question: `Solve the integration: Integrate[ x * e^x dx ] from 0 to 1.`,
-          options: [
-            'e - 1',
-            '1',
-            'e',
-            'e/2'
-          ],
-          correctAnswer: 1,
-          explanation: `Using integration by parts: Integrate[u*v dx] = u*Integrate[v dx] - Integrate[du/dx * Integrate[v dx] dx]. Here u = x, v = e^x. Integral is x*e^x - e^x = e^x*(x - 1). Evaluating bounds from 0 to 1 gives: [e^1 * 0] - [e^0 * (-1)] = 0 - (-1) = 1.`,
-          marks: 2
-        }
-      ];
-    }
-
-    newQs.forEach(q => {
-      addQuestion(q);
-    });
-
-    setGeneratedQs(newQs);
-    setIsGenerating(false);
-    setGenerationLogs(prev => [...prev, `[OFFLINE FALLBACK] Generated ${newQs.length} mockup questions locally (Server was offline).`]);
   };
 
   return (

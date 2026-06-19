@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLms } from '../../context/LmsContext';
-import { Users, FileText, CheckSquare, TrendingUp, Sparkles, MessageSquare, AlertCircle } from 'lucide-react';
+import { Users, FileText, CheckSquare, TrendingUp, Sparkles, MessageSquare, AlertCircle, Database, Cpu, Activity, RefreshCw } from 'lucide-react';
 
 interface AdminDashboardProps {
   setCurrentTab: (tab: string) => void;
@@ -10,10 +10,92 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, setSelectedAttemptIdForFeedback }) => {
   const { attempts, studyMaterials, questions } = useLms();
 
-  // Calculate stats
-  const pendingReviews = attempts.filter(att => !att.feedback || att.feedback.instructorName === 'AI Engine');
-  const totalSubscribed = 142; // static seeded value
-  const dailyEngagement = '89%';
+  // System Status State
+  const [status, setStatus] = React.useState<{
+    database: 'connected' | 'disconnected' | 'checking';
+    ai: 'configured' | 'missing' | 'checking';
+    loading: boolean;
+  }>({
+    database: 'checking',
+    ai: 'checking',
+    loading: false
+  });
+
+  const checkStatus = async () => {
+    setStatus(prev => ({ ...prev, loading: true }));
+    try {
+      const response = await fetch('http://localhost:5000/api/health-check');
+      if (!response.ok) throw new Error('Failed to fetch status');
+      const data = await response.json();
+      setStatus({
+        database: data.database,
+        ai: data.ai,
+        loading: false
+      });
+    } catch (error) {
+      console.error('Health check error:', error);
+      setStatus({
+        database: 'disconnected',
+        ai: 'missing',
+        loading: false
+      });
+    }
+  };
+
+  React.useEffect(() => {
+    checkStatus();
+  }, []);
+
+  // Dynamic Stats and Pending Attempts States
+  const [stats, setStats] = React.useState<{
+    totalStudents: number;
+    dailyActivePercentage: string;
+    totalQuestions: number;
+    pendingReviews: number;
+  }>({
+    totalStudents: 0,
+    dailyActivePercentage: '0%',
+    totalQuestions: 0,
+    pendingReviews: 0
+  });
+
+  const [pendingAttempts, setPendingAttempts] = React.useState<any[]>([]);
+  const [loadingStats, setLoadingStats] = React.useState(true);
+
+  const fetchStatsAndAttempts = async () => {
+    const token = localStorage.getItem('mht_cet_token');
+    if (!token) return;
+
+    try {
+      const statsRes = await fetch('http://localhost:5000/api/admin/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const statsData = await statsRes.json();
+      if (statsRes.ok) {
+        setStats(statsData);
+      }
+
+      const attemptsRes = await fetch('http://localhost:5000/api/admin/pending-attempts', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const attemptsData = await attemptsRes.json();
+      if (attemptsRes.ok) {
+        setPendingAttempts(attemptsData);
+      }
+    } catch (err) {
+      console.error('Error fetching admin dashboard stats:', err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchStatsAndAttempts();
+  }, []);
 
   const handleReviewClick = (attId: string) => {
     setSelectedAttemptIdForFeedback(attId);
@@ -38,7 +120,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
             <Users size={28} />
           </div>
           <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{totalSubscribed} Students</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.totalStudents} Students</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total Registrations</div>
           </div>
         </div>
@@ -48,7 +130,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
             <TrendingUp size={28} />
           </div>
           <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{dailyEngagement}</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.dailyActivePercentage}</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Daily Active Users</div>
           </div>
         </div>
@@ -58,8 +140,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
             <FileText size={28} />
           </div>
           <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{studyMaterials.length} Materials</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Syllabus Documents</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.totalQuestions} MCQs</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Syllabus MCQ Bank</div>
           </div>
         </div>
 
@@ -68,7 +150,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
             <CheckSquare size={28} />
           </div>
           <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{pendingReviews.length} Pending</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.pendingReviews} Pending</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Instructor Reviews</div>
           </div>
         </div>
@@ -97,9 +179,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
                 </tr>
               </thead>
               <tbody>
-                {pendingReviews.map(att => (
+                {pendingAttempts.map(att => (
                   <tr key={att.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>Rahul Sharma</td>
+                    <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{att.studentName}</td>
                     <td>{att.testName}</td>
                     <td>{att.date}</td>
                     <td>
@@ -117,7 +199,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
                   </tr>
                 ))}
 
-                {pendingReviews.length === 0 && (
+                {pendingAttempts.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ textAlign: 'center', padding: '30px' }}>
                       🎉 Excellent! All mock tests have been evaluated with manual feedback.
@@ -131,40 +213,100 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ setCurrentTab, s
 
         {/* Subscription & Class overview */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* System Status Widget */}
           <div className="card">
-            <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Enrollment Package Split</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={18} style={{ color: status.database === 'connected' && status.ai === 'configured' ? 'var(--success)' : 'var(--warning)' }} />
+                System Status
+              </h3>
+              <button 
+                onClick={checkStatus} 
+                disabled={status.loading}
+                style={{ 
+                  background: 'none', 
+                  border: 'none', 
+                  cursor: 'pointer', 
+                  color: 'var(--text-light)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: '4px' 
+                }}
+                title="Refresh Status"
+              >
+                <RefreshCw size={14} className={status.loading ? 'pulse' : ''} />
+              </button>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                  <span>Mock Test Series Pro (₹1,499)</span>
-                  <span style={{ fontWeight: 600 }}>84 Students</span>
+              {/* Database Status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifySelf: 'stretch', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--primary-light)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Database size={16} style={{ color: 'var(--text-muted)' }} />
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Database Active</span>
                 </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--primary-light)', borderRadius: '99px' }}>
-                  <div style={{ width: '59%', height: '100%', backgroundColor: 'var(--accent)', borderRadius: '99px' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    backgroundColor: status.database === 'connected' ? 'var(--success)' : status.database === 'checking' ? 'var(--warning)' : 'var(--danger)',
+                    boxShadow: status.database === 'connected' ? '0 0 8px var(--success)' : 'none'
+                  }} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: status.database === 'connected' ? 'var(--success)' : status.database === 'checking' ? 'var(--warning)' : 'var(--danger)' }}>
+                    {status.database === 'connected' ? 'CONNECTED' : status.database === 'checking' ? 'CHECKING...' : 'DISCONNECTED'}
+                  </span>
                 </div>
               </div>
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                  <span>Master Prep Complete (₹2,999)</span>
-                  <span style={{ fontWeight: 600 }}>32 Students</span>
+              {/* AI Status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifySelf: 'stretch', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--primary-light)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Cpu size={16} style={{ color: 'var(--text-muted)' }} />
+                  <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>AI Ready</span>
                 </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--primary-light)', borderRadius: '99px' }}>
-                  <div style={{ width: '22%', height: '100%', backgroundColor: '#10b981', borderRadius: '99px' }} />
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-                  <span>Free Evaluation Pack</span>
-                  <span style={{ fontWeight: 600 }}>26 Students</span>
-                </div>
-                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--primary-light)', borderRadius: '99px' }}>
-                  <div style={{ width: '18%', height: '100%', backgroundColor: 'var(--text-light)', borderRadius: '99px' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ 
+                    width: '8px', 
+                    height: '8px', 
+                    borderRadius: '50%', 
+                    backgroundColor: status.ai === 'configured' ? 'var(--success)' : status.ai === 'checking' ? 'var(--warning)' : 'var(--danger)',
+                    boxShadow: status.ai === 'configured' ? '0 0 8px var(--success)' : 'none'
+                  }} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: status.ai === 'configured' ? 'var(--success)' : status.ai === 'checking' ? 'var(--warning)' : 'var(--danger)' }}>
+                    {status.ai === 'configured' ? 'CONFIGURED' : status.ai === 'checking' ? 'CHECKING...' : 'DEMO MODE'}
+                  </span>
                 </div>
               </div>
             </div>
+
+            {/* Warning indicator if either fails */}
+            {(status.database !== 'connected' || status.ai !== 'configured') && status.database !== 'checking' && status.ai !== 'checking' && (
+              <div style={{ 
+                marginTop: '12px', 
+                padding: '8px 12px', 
+                borderRadius: 'var(--radius-sm)', 
+                backgroundColor: 'var(--danger-bg)', 
+                border: '1px solid var(--danger)',
+                fontSize: '0.75rem', 
+                color: 'var(--danger)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <AlertCircle size={14} />
+                <span>
+                  {status.database !== 'connected' && status.ai !== 'configured' 
+                    ? 'Critical: Database offline & AI in demo mode.'
+                    : status.database !== 'connected' 
+                    ? 'Warning: Database offline. Data is read-only.'
+                    : 'Notice: AI in demo mode. Gemini API Key is missing.'}
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Enrollment package splits removed for dynamic metrics cleanup */}
 
           <div className="card" style={{ backgroundColor: 'var(--primary-light)' }}>
             <h3 style={{ fontSize: '1.15rem', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>

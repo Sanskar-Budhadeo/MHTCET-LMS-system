@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLms } from '../context/LmsContext';
 import {
   BookOpen,
@@ -10,35 +10,94 @@ import {
   Play,
   Users,
   Compass,
-  FileCheck
+  FileCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
   const { login } = useLms();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'student' | 'parent' | 'admin'>('student');
-  const [email, setEmail] = useState('rahul@cet.com');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('student@demo.com');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleRoleChange = (role: 'student' | 'parent' | 'admin') => {
     setSelectedRole(role);
-    if (role === 'student') setEmail('rahul@cet.com');
+    if (role === 'student') setEmail('student@demo.com');
     else if (role === 'parent') setEmail('parent.rahul@cet.com');
-    else setEmail('sharma.sir@cet.com');
+    else setEmail('admin@demo.com');
     setErrorMsg('');
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Secret Developer Demo Mode: fills mock student info
+  const triggerBypass = () => {
+    setEmail('student@demo.com');
+    setPassword('password123');
+    setSelectedRole('student');
+    setIsSignUp(false);
+    setErrorMsg('');
+  };
+
+  // Listen for Ctrl+Shift+D shortcut when modal is open
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showLoginModal && e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        triggerBypass();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showLoginModal]);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      setErrorMsg('Please enter a valid email address.');
+    if (!email || !password || (isSignUp && !name)) {
+      setErrorMsg('Please fill in all required fields.');
       return;
     }
-    const success = login(email, selectedRole);
-    if (success) {
+
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const endpoint = isSignUp 
+        ? 'http://localhost:5000/api/auth/register' 
+        : 'http://localhost:5000/api/auth/login';
+      
+      const payload = isSignUp 
+        ? { name, email, password, role: selectedRole }
+        : { email, password };
+        
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+      
+      // Update state in Context
+      login(data.user, data.token);
       setShowLoginModal(false);
-    } else {
-      setErrorMsg('Invalid login details.');
+    } catch (err: any) {
+      console.error('Auth error:', err);
+      setErrorMsg(err.message || 'Server connection failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -239,50 +298,32 @@ export const LandingPage: React.FC = () => {
       {showLoginModal && (
         <div className="modal-overlay" onClick={() => setShowLoginModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-            <h3 style={{ fontSize: '1.5rem', marginBottom: '8px', textAlign: 'center' }}>Portal Sign In</h3>
+            <h3 
+              onDoubleClick={triggerBypass}
+              style={{ fontSize: '1.5rem', marginBottom: '8px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+              title="Double click to autofill demo data"
+            >
+              {isSignUp ? 'Create Account' : 'Portal Sign In'}
+            </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '24px', textAlign: 'center' }}>
-              Select your system profile role and authenticate.
+              {isSignUp ? 'Sign up to start preparing for MHT-CET PCMB.' : 'Enter your credentials to access the prep portal.'}
             </p>
 
-            {/* Role Select Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '24px' }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${selectedRole === 'student' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => handleRoleChange('student')}
-              >
-                Student
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${selectedRole === 'parent' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => handleRoleChange('parent')}
-              >
-                Parent
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${selectedRole === 'admin' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => handleRoleChange('admin')}
-              >
-                Admin
-              </button>
-            </div>
-
-            {/* Demo Credential Notification Box */}
-            <div style={{ backgroundColor: 'var(--primary-light)', border: '1px solid var(--border)', padding: '12px', borderRadius: '6px', marginBottom: '20px' }}>
-              <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
-                💡 Demo Mode Prefilled Credentials:
-              </p>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Email: <strong>{email}</strong>
-              </p>
-              <p style={{ fontSize: '0.70rem', color: 'var(--text-light)', marginTop: '2px' }}>
-                Click 'Access Portal' below to instantly sign in and check features.
-              </p>
-            </div>
-
             <form onSubmit={handleLoginSubmit}>
+              {isSignUp && (
+                <div className="form-group">
+                  <label className="form-label">Full Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); setErrorMsg(''); }}
+                    placeholder="Enter your name"
+                    required
+                  />
+                </div>
+              )}
+
               <div className="form-group">
                 <label className="form-label">Email Address</label>
                 <input
@@ -295,6 +336,69 @@ export const LandingPage: React.FC = () => {
                 />
               </div>
 
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label className="form-label">Password</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-input"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+                    placeholder="••••••••"
+                    style={{ paddingRight: '40px' }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--text-light)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: 0
+                    }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              {isSignUp && (
+                <div className="form-group" style={{ marginBottom: '24px' }}>
+                  <label className="form-label">Select Profile Role</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${selectedRole === 'student' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => handleRoleChange('student')}
+                    >
+                      Student
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${selectedRole === 'parent' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => handleRoleChange('parent')}
+                    >
+                      Parent
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${selectedRole === 'admin' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => handleRoleChange('admin')}
+                    >
+                      Admin
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {errorMsg && (
                 <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginBottom: '16px' }}>
                   ⚠️ {errorMsg}
@@ -302,14 +406,50 @@ export const LandingPage: React.FC = () => {
               )}
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => setShowLoginModal(false)} className="btn btn-secondary" style={{ flex: 1 }}>
+                <button type="button" onClick={() => setShowLoginModal(false)} className="btn btn-secondary" style={{ flex: 1 }} disabled={loading}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Access Portal
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ flex: 1, display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <div className="pulse" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'white' }} />
+                      <span>{isSignUp ? 'Creating...' : 'Authenticating...'}</span>
+                    </>
+                  ) : (
+                    <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                  )}
                 </button>
               </div>
             </form>
+
+            <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.85rem', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              {isSignUp ? (
+                <p style={{ color: 'var(--text-muted)' }}>
+                  Already have an account?{' '}
+                  <span 
+                    onClick={() => { setIsSignUp(false); setErrorMsg(''); }} 
+                    style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Sign In
+                  </span>
+                </p>
+              ) : (
+                <p style={{ color: 'var(--text-muted)' }}>
+                  Need an account?{' '}
+                  <span 
+                    onClick={() => { setIsSignUp(true); setErrorMsg(''); }} 
+                    style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Create Account
+                  </span>
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
