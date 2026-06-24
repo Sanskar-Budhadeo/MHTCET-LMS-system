@@ -49,7 +49,7 @@ const TestAttemptSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  subject: {
+  examType: {
     type: String,
     required: true
   },
@@ -68,6 +68,20 @@ const TestAttemptSchema = new mongoose.Schema({
   accuracy: {
     type: Number,
     required: true
+  },
+  responses: [{
+    questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+    selectedOption: { type: String },
+    isCorrect: { type: Boolean },
+    timeSpent: { type: Number },
+    chapter: { type: String },
+    subject: { type: String }
+  }],
+  percentile: {
+    type: Number
+  },
+  nationalRank: {
+    type: Number
   },
   ai_analysis: {
     weak_topics: {
@@ -146,7 +160,51 @@ const UserSchema = new mongoose.Schema({
   role: {
     type: String,
     required: true,
-    enum: ['student', 'parent', 'admin']
+    enum: ['student', 'parent', 'teacher', 'admin', 'executive']
+  },
+  prn: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  status: {
+    type: String,
+    default: 'active'
+  },
+  linkedStudentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  targetCourse: {
+    type: String,
+    enum: ['PCB', 'PCM', 'PCMB']
+  },
+  targetExam: {
+    type: String,
+    enum: ['JEE', 'NEET', 'MHT-CET']
+  },
+  plan: {
+    type: String,
+    enum: ['Free', 'Pro', 'Premium'],
+    default: 'Free'
+  },
+  invoiceUrl: {
+    type: String
+  },
+  invoiceId: {
+    type: String
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['Pending', 'Paid', 'Failed']
+  },
+  linkedStudents: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  parentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   streak: {
     type: Number,
@@ -197,3 +255,74 @@ const UserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
+
+const MockTestSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true
+  },
+  duration: {
+    type: Number,
+    required: true // in minutes
+  },
+  subjects: {
+    type: [String],
+    default: []
+  },
+  questions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Question'
+  }]
+}, { timestamps: true });
+
+export const MockTest = mongoose.model('MockTest', MockTestSchema);
+
+const AIUsageLogSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  actionType: {
+    type: String,
+    required: true,
+    enum: ['generate_test', 'doubt_solve']
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now
+  }
+}, { timestamps: true });
+
+export const AIUsageLog = mongoose.model('AIUsageLog', AIUsageLogSchema);
+
+const SystemAlertSchema = new mongoose.Schema({
+  recipientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  message: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    default: 'info'
+  },
+  read: {
+    type: Boolean,
+    default: false
+  }
+}, { timestamps: true });
+
+export const SystemAlert = mongoose.model('SystemAlert', SystemAlertSchema);
+
+const CalendarEventSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  date: { type: String, required: true },
+  type: { type: String, required: true, enum: ['Test', 'Lecture', 'Target'] },
+  subject: { type: String, enum: ['Physics', 'Chemistry', 'Mathematics', 'Biology', 'General'] }
+}, { timestamps: true });
+
+export const CalendarEvent = mongoose.model('CalendarEvent', CalendarEventSchema);

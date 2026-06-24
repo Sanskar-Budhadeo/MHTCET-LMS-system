@@ -18,7 +18,7 @@ import {
 export const LandingPage: React.FC = () => {
   const { login } = useLms();
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'student' | 'parent' | 'admin'>('student');
+  const [selectedRole, setSelectedRole] = useState<'student' | 'parent' | 'admin' | 'teacher' | 'executive'>('student');
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('student@demo.com');
@@ -27,11 +27,27 @@ export const LandingPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleRoleChange = (role: 'student' | 'parent' | 'admin') => {
+  // MHT-CET Phase 1 Custom Form States
+  const [targetCourse, setTargetCourse] = useState<'PCB' | 'PCM' | 'PCMB'>('PCM');
+  const [targetExam, setTargetExam] = useState<'JEE' | 'NEET' | 'MHT-CET'>('MHT-CET');
+  const [plan, setPlan] = useState<'Free' | 'Pro' | 'Premium'>('Free');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  
+  // Simulated Card/UPI Gateway Fields
+  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
+  const [expiry, setExpiry] = useState('12/29');
+  const [cvv, setCvv] = useState('123');
+  const [upiId, setUpiId] = useState('student@okaxis');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+
+  const handleRoleChange = (role: 'student' | 'parent' | 'admin' | 'teacher' | 'executive') => {
     setSelectedRole(role);
-    if (role === 'student') setEmail('student@demo.com');
+    if (role === 'student') setEmail('rahul@cet.com');
     else if (role === 'parent') setEmail('parent.rahul@cet.com');
-    else setEmail('admin@demo.com');
+    else if (role === 'teacher') setEmail('teacher@demo.com');
+    else if (role === 'executive') setEmail('executive@demo.com');
+    else setEmail('sharma.sir@cet.com');
     setErrorMsg('');
   };
 
@@ -65,6 +81,15 @@ export const LandingPage: React.FC = () => {
       return;
     }
 
+    if (isSignUp && selectedRole === 'student' && plan !== 'Free' && !showPaymentModal) {
+      setShowPaymentModal(true);
+      return;
+    }
+
+    await executeRegistrationOrLogin();
+  };
+
+  const executeRegistrationOrLogin = async () => {
     setLoading(true);
     setErrorMsg('');
 
@@ -74,7 +99,15 @@ export const LandingPage: React.FC = () => {
         : 'http://localhost:5000/api/auth/login';
       
       const payload = isSignUp 
-        ? { name, email, password, role: selectedRole }
+        ? { 
+            name, 
+            email, 
+            password, 
+            role: selectedRole,
+            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
+            targetExam: selectedRole === 'student' ? targetExam : undefined,
+            plan: selectedRole === 'student' ? plan : undefined
+          }
         : { email, password };
         
       const response = await fetch(endpoint, {
@@ -93,12 +126,23 @@ export const LandingPage: React.FC = () => {
       // Update state in Context
       login(data.user, data.token);
       setShowLoginModal(false);
+      setShowPaymentModal(false);
     } catch (err: any) {
       console.error('Auth error:', err);
       setErrorMsg(err.message || 'Server connection failed.');
     } finally {
       setLoading(false);
+      setPaymentProcessing(false);
     }
+  };
+
+  const handleSimulatedPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPaymentProcessing(true);
+    // Micro-animation delay to simulate gateway communication
+    setTimeout(() => {
+      executeRegistrationOrLogin();
+    }, 1500);
   };
 
   return (
@@ -123,12 +167,21 @@ export const LandingPage: React.FC = () => {
             MHT-CET <span style={{ color: 'var(--accent)' }}>Ace</span>
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button onClick={() => { handleRoleChange('student'); setShowLoginModal(true); }} className="btn btn-outline btn-sm">
-            Student Login
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button onClick={() => { handleRoleChange('student'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
+            Student Portal
           </button>
-          <button onClick={() => { handleRoleChange('admin'); setShowLoginModal(true); }} className="btn btn-primary btn-sm">
+          <button onClick={() => { handleRoleChange('parent'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
+            Parent Portal
+          </button>
+          <button onClick={() => { handleRoleChange('teacher'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
             Teacher Portal
+          </button>
+          <button onClick={() => { handleRoleChange('executive'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
+            Executive Portal
+          </button>
+          <button onClick={() => { handleRoleChange('admin'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-primary btn-sm">
+            Admin Console
           </button>
         </div>
       </div>
@@ -309,6 +362,19 @@ export const LandingPage: React.FC = () => {
               {isSignUp ? 'Sign up to start preparing for MHT-CET PCMB.' : 'Enter your credentials to access the prep portal.'}
             </p>
 
+            {!isSignUp && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', padding: '10px 12px', backgroundColor: 'var(--primary-light)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontWeight: 600, textTransform: 'uppercase' }}>Demo Account Quick Logins</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => { handleRoleChange('student'); setPassword('password123'); }} style={{ fontSize: '0.7rem', padding: '4px 8px' }}>Student</button>
+                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => { handleRoleChange('parent'); setPassword('password123'); }} style={{ fontSize: '0.7rem', padding: '4px 8px' }}>Parent</button>
+                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => { handleRoleChange('teacher'); setPassword('password123'); }} style={{ fontSize: '0.7rem', padding: '4px 8px' }}>Teacher</button>
+                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => { handleRoleChange('executive'); setPassword('password123'); }} style={{ fontSize: '0.7rem', padding: '4px 8px' }}>Executive</button>
+                  <button type="button" className="btn btn-xs btn-secondary" onClick={() => { handleRoleChange('admin'); setPassword('password123'); }} style={{ fontSize: '0.7rem', padding: '4px 8px' }}>Admin</button>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleLoginSubmit}>
               {isSignUp && (
                 <div className="form-group">
@@ -371,32 +437,62 @@ export const LandingPage: React.FC = () => {
               </div>
 
               {isSignUp && (
-                <div className="form-group" style={{ marginBottom: '24px' }}>
-                  <label className="form-label">Select Profile Role</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${selectedRole === 'student' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => handleRoleChange('student')}
+                <>
+                  <div className="form-group" style={{ marginBottom: '16px' }}>
+                    <label className="form-label">Select Profile Role</label>
+                    <select
+                      className="form-select"
+                      value={selectedRole}
+                      onChange={(e) => handleRoleChange(e.target.value as any)}
+                      style={{
+                        width: '100%',
+                        padding: '10px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border)',
+                        backgroundColor: 'var(--bg-app)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.875rem'
+                      }}
                     >
-                      Student
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${selectedRole === 'parent' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => handleRoleChange('parent')}
-                    >
-                      Parent
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${selectedRole === 'admin' ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => handleRoleChange('admin')}
-                    >
-                      Admin
-                    </button>
+                      <option value="student">Student</option>
+                      <option value="parent">Parent</option>
+                      <option value="teacher">Teacher (Status: Pending Approval)</option>
+                      <option value="executive">Executive / CEO (BI Metrics)</option>
+                      <option value="admin">System Admin</option>
+                    </select>
                   </div>
-                </div>
+
+                  {selectedRole === 'student' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', backgroundColor: 'var(--primary-light)', padding: '14px', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Target Course</label>
+                          <select className="form-select" value={targetCourse} onChange={(e) => setTargetCourse(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px' }}>
+                            <option value="PCM">PCM (Engg)</option>
+                            <option value="PCB">PCB (Medical)</option>
+                            <option value="PCMB">PCMB (Both)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Target Exam</label>
+                          <select className="form-select" value={targetExam} onChange={(e) => setTargetExam(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px' }}>
+                            <option value="MHT-CET">MHT-CET</option>
+                            <option value="JEE">JEE Mains</option>
+                            <option value="NEET">NEET UG</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Subscription Tier</label>
+                        <select className="form-select" value={plan} onChange={(e) => setPlan(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px' }}>
+                          <option value="Free">Free (Mock Tests Only)</option>
+                          <option value="Pro">Pro (₹1,499 - AI Insights + Tutor + Mock Tests)</option>
+                          <option value="Premium">Premium (₹2,999 - Full Pack + PDF + Instructor Review)</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {errorMsg && (
@@ -421,7 +517,7 @@ export const LandingPage: React.FC = () => {
                       <span>{isSignUp ? 'Creating...' : 'Authenticating...'}</span>
                     </>
                   ) : (
-                    <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                    <span>{isSignUp ? (plan === 'Free' ? 'Create Account' : 'Proceed to Pay') : 'Sign In'}</span>
                   )}
                 </button>
               </div>
@@ -450,6 +546,140 @@ export const LandingPage: React.FC = () => {
                 </p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulated Payment Checkout Modal */}
+      {showPaymentModal && (
+        <div className="modal-overlay" onClick={() => setShowPaymentModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px', padding: '24px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <Compass size={32} style={{ color: 'var(--accent)', margin: '0 auto 8px' }} className="pulse" />
+              <h3 style={{ fontSize: '1.35rem', fontWeight: 700 }}>Secure Payment Gateway</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
+                Simulating order for <strong>{plan} Package</strong>
+              </p>
+            </div>
+
+            <div style={{ backgroundColor: 'var(--primary-light)', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Amount</span>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800 }}>{plan === 'Pro' ? '₹1,499' : '₹2,999'}</div>
+              </div>
+              <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>MHT-CET ACE LMS</span>
+            </div>
+
+            <form onSubmit={handleSimulatedPayment}>
+              {/* Payment Method Switcher */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('card')}
+                  className={`btn btn-xs ${paymentMethod === 'card' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ height: '32px' }}
+                >
+                  Credit/Debit Card
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('upi')}
+                  className={`btn btn-xs ${paymentMethod === 'upi' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ height: '32px' }}
+                >
+                  UPI (GPay/PhonePe)
+                </button>
+              </div>
+
+              {paymentMethod === 'card' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Card Number</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      placeholder="4242 4242 4242 4242"
+                      required
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Expiry Date</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={expiry}
+                        onChange={(e) => setExpiry(e.target.value)}
+                        placeholder="MM/YY"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>CVV</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        value={cvv}
+                        onChange={(e) => setCvv(e.target.value)}
+                        placeholder="•••"
+                        maxLength={3}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>UPI Virtual Address</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={upiId}
+                    onChange={(e) => setUpiId(e.target.value)}
+                    placeholder="student@upi"
+                    required
+                  />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-light)', marginTop: '4px', display: 'block' }}>
+                    Simulating collect requests using mock payment APIs.
+                  </span>
+                </div>
+              )}
+
+              {errorMsg && (
+                <p style={{ color: 'var(--danger)', fontSize: '0.75rem', marginBottom: '16px' }}>
+                  ⚠️ {errorMsg}
+                </p>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                  disabled={paymentProcessing}
+                >
+                  Go Back
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 2, display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}
+                  disabled={paymentProcessing}
+                >
+                  {paymentProcessing ? (
+                    <>
+                      <div className="pulse" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'white' }} />
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <span>Simulate Payment Success</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

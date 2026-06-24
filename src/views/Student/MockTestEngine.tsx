@@ -4,8 +4,13 @@ import { MockTest, Question, TestAttempt } from '../../data/mockData';
 import { Clock, Eye, AlertCircle, Award, CheckCircle2, XCircle, ChevronRight, HelpCircle, ArrowLeft } from 'lucide-react';
 
 export const MockTestEngine: React.FC = () => {
-  const { mockTests, submitAttempt, attempts, questions } = useLms();
+  const { mockTests, submitAttempt, attempts, questions, setIsMockTestActive } = useLms();
+  const [tests, setTests] = useState<MockTest[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedCategory, setSelectedCategory] = useState<'All' | 'Complete' | 'Chapter' | 'Subject'>('All');
   const [activeTest, setActiveTest] = useState<MockTest | null>(null);
+  const [selectedLobbyTest, setSelectedLobbyTest] = useState<MockTest | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
   const [reviewAttempt, setReviewAttempt] = useState<TestAttempt | null>(null);
   
   // Test taker state
@@ -19,6 +24,46 @@ export const MockTestEngine: React.FC = () => {
   
   const timerRef = useRef<any>(null);
   const qTimeRef = useRef<number>(0);
+
+  // Fetch mock tests from backend on mount
+  useEffect(() => {
+    const token = localStorage.getItem('mht_cet_token');
+    fetch('http://localhost:5000/api/tests', {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : ''
+      }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Backend test route unavailable');
+        return res.json();
+      })
+      .then(data => {
+        const mapped = data.map((t: any) => ({
+          id: t._id,
+          name: t.name,
+          duration: t.duration,
+          subjects: t.subjects,
+          questions: t.questions.map((q: any) => ({
+            id: q._id,
+            subject: q.subject,
+            topic: q.chapter,
+            difficulty: q.difficulty,
+            question: q.question_text,
+            options: [q.options.A, q.options.B, q.options.C, q.options.D],
+            correctAnswer: q.correct_option === 'A' ? 0 : q.correct_option === 'B' ? 1 : q.correct_option === 'C' ? 2 : 3,
+            explanation: q.explanation,
+            marks: q.subject === 'Mathematics' ? 2 : 1
+          }))
+        }));
+        setTests(mapped);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.warn('Evaluation lobby fallback to local mock tests:', err.message);
+        setTests(mockTests);
+        setIsLoading(false);
+      });
+  }, [mockTests]);
 
   // Set up timer for active test
   useEffect(() => {
@@ -54,6 +99,23 @@ export const MockTestEngine: React.FC = () => {
     };
   }, [activeTest]);
 
+  useEffect(() => {
+    setIsMockTestActive(!!activeTest);
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeTest) {
+        e.preventDefault();
+        e.returnValue = "A mock test is currently in progress. If you leave, your progress will be lost.";
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [activeTest, setIsMockTestActive]);
+
   // Track time spent on individual questions
   useEffect(() => {
     if (activeTest) {
@@ -72,8 +134,15 @@ export const MockTestEngine: React.FC = () => {
   }, [currentQIndex, activeTest]);
 
   const handleStartTest = (test: MockTest) => {
-    setActiveTest(test);
+    setSelectedLobbyTest(test);
+    setAgreedToTerms(false);
     setReviewAttempt(null);
+  };
+
+  const handleBeginActualExam = () => {
+    if (!selectedLobbyTest) return;
+    setActiveTest(selectedLobbyTest);
+    setSelectedLobbyTest(null);
   };
 
   const handleOptionSelect = (optionIdx: number) => {
@@ -174,76 +243,118 @@ export const MockTestEngine: React.FC = () => {
       [lastQId]: (questionTimes[lastQId] || 0) + finalDiff
     };
 
-    // Evaluate answers
-    let score = 0;
-    let maxScore = 0;
-    let correctCount = 0;
-    const answerLogs: TestAttempt['answers'] = {};
-
-    activeTest.questions.forEach(q => {
-      const selected = selectedAnswers[q.id];
-      const isCorrect = selected === q.correctAnswer;
-      const qMarks = q.marks || 1;
-      
-      maxScore += qMarks;
-      if (selected !== undefined && isCorrect) {
-        score += qMarks;
-        correctCount++;
-      }
-
-      answerLogs[q.id] = {
-        selected: selected !== undefined ? selected : -1,
-        isCorrect: selected !== undefined && isCorrect,
-        timeTaken: finalTimes[q.id] || 30 // fallback
-      };
-    });
-
     const elapsed = Math.round((Date.now() - testStartTime) / 1000);
-    const accuracy = Math.round((correctCount / activeTest.questions.length) * 100);
-
-    const attemptId = submitAttempt({
-      testId: activeTest.id,
-      testName: activeTest.name,
-      date: new Date().toISOString().split('T')[0],
-      score,
-      maxScore,
-      timeSpent: elapsed,
-      accuracy,
-      answers: answerLogs
-    });
-
-    // Find and load the saved attempt to review
-    // We can lookup in our local storage sync, or mock database
-    setActiveTest(null);
-    setShowSubmitConfirm(false);
+    const token = localStorage.getItem('mht_cet_token');
     
-    // We'll redirect to review screen for this attempt
-    const newAttempt: TestAttempt = {
-      id: attemptId,
-      testId: activeTest.id,
-      testName: activeTest.name,
-      date: new Date().toISOString().split('T')[0],
-      score,
-      maxScore,
-      timeSpent: elapsed,
-      accuracy,
-      answers: answerLogs,
-      feedback: {
-        instructorName: 'AI Diagnostic',
-        text: `Test submitted successfully! You secured a score of ${score}/${maxScore} (${accuracy}% accuracy). Review structural chapter errors below.`,
-        date: new Date().toISOString().split('T')[0],
-        aiSuggestions: [
-          `You completed the test in ${Math.round(elapsed / 60)} minutes.`,
-          `High response delays noted on subject topics: ${activeTest.questions
-            .filter(q => (finalTimes[q.id] || 0) > 200)
-            .map(q => q.topic)
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .slice(0, 2)
-            .join(', ') || 'None'}.`
-        ]
-      }
-    };
-    setReviewAttempt(newAttempt);
+    fetch('http://localhost:5000/api/tests/submit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body: JSON.stringify({
+        testId: activeTest.id,
+        answers: selectedAnswers,
+        timeSpent: elapsed,
+        questionTimes: finalTimes
+      })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Evaluation server offline.');
+        return res.json();
+      })
+      .then(data => {
+        setActiveTest(null);
+        setShowSubmitConfirm(false);
+        
+        setReviewAttempt({
+          id: data.attemptId,
+          testId: activeTest.id,
+          testName: activeTest.name,
+          date: new Date().toISOString().split('T')[0],
+          score: data.score,
+          maxScore: data.maxScore,
+          timeSpent: elapsed,
+          accuracy: data.accuracy,
+          answers: activeTest.questions.reduce((acc, q) => {
+            const selIdx = selectedAnswers[q.id];
+            acc[q.id] = {
+              selected: selIdx !== undefined ? selIdx : -1,
+              isCorrect: selIdx === q.correctAnswer,
+              timeTaken: finalTimes[q.id] || 30
+            };
+            return acc;
+          }, {} as any),
+          feedback: {
+            instructorName: 'AI Diagnostic Engine',
+            text: `Score: ${data.score}/${data.maxScore}. Accuracy: ${data.accuracy}%. Percentile: ${data.percentile || 'N/A'}. National Rank: ${data.nationalRank || 'N/A'}.`,
+            date: new Date().toISOString().split('T')[0],
+            aiSuggestions: [
+              `Time index: Completed in ${Math.round(elapsed / 60)} minutes.`,
+              `National Standing: Rank #${data.nationalRank} (Percentile: ${data.percentile}%)`
+            ]
+          }
+        });
+      })
+      .catch(err => {
+        console.warn('Evaluation failed on server, falling back to client evaluation:', err.message);
+        
+        // Evaluate answers locally
+        let score = 0;
+        let maxScore = 0;
+        let correctCount = 0;
+        const answerLogs: TestAttempt['answers'] = {};
+
+        activeTest.questions.forEach(q => {
+          const selected = selectedAnswers[q.id];
+          const isCorrect = selected === q.correctAnswer;
+          const qMarks = q.marks || 1;
+          
+          maxScore += qMarks;
+          if (selected !== undefined && isCorrect) {
+            score += qMarks;
+            correctCount++;
+          }
+
+          answerLogs[q.id] = {
+            selected: selected !== undefined ? selected : -1,
+            isCorrect: selected !== undefined && isCorrect,
+            timeTaken: finalTimes[q.id] || 30
+          };
+        });
+
+        const accuracy = Math.round((correctCount / activeTest.questions.length) * 100);
+        submitAttempt({
+          testId: activeTest.id,
+          testName: activeTest.name,
+          date: new Date().toISOString().split('T')[0],
+          score,
+          maxScore,
+          timeSpent: elapsed,
+          accuracy,
+          answers: answerLogs
+        });
+
+        setActiveTest(null);
+        setShowSubmitConfirm(false);
+        setReviewAttempt({
+          id: 'local_att_' + Math.random().toString(36).substr(2, 9),
+          testId: activeTest.id,
+          testName: activeTest.name,
+          date: new Date().toISOString().split('T')[0],
+          score,
+          maxScore,
+          timeSpent: elapsed,
+          accuracy,
+          answers: answerLogs,
+          feedback: {
+            instructorName: 'Local Fallback Engine',
+            text: `Evaluated locally. Score: ${score}/${maxScore} (${accuracy}% accuracy).`,
+            date: new Date().toISOString().split('T')[0],
+            aiSuggestions: ['Review weak topics. Server was unavailable for relative scoring.']
+          }
+        });
+      });
   };
 
   const getTimerString = () => {
@@ -270,9 +381,83 @@ export const MockTestEngine: React.FC = () => {
     return cls;
   };
 
+  // Render instructions screen before start
+  if (selectedLobbyTest) {
+    return (
+      <div className="card" style={{ maxWidth: '800px', margin: '40px auto', display: 'flex', flexDirection: 'column', gap: '20px', padding: '30px' }}>
+        <div>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '8px', color: 'var(--text-main)' }}>
+            Exam Simulator Instructions
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Please read the instructions carefully before starting the exam.
+          </p>
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', paddingTop: '20px', paddingBottom: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px' }}>Test Details:</h3>
+            <ul style={{ fontSize: '0.875rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '6px', listStyleType: 'disc', paddingLeft: '20px' }}>
+              <li>Test Name: <strong>{selectedLobbyTest.name}</strong></li>
+              <li>Duration: <strong>{selectedLobbyTest.duration} minutes</strong></li>
+              <li>Number of Questions: <strong>{selectedLobbyTest.questions.length} MCQs</strong></li>
+              <li>Subjects Included: <strong>{selectedLobbyTest.subjects.join(', ')}</strong></li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px' }}>Marking Scheme & Criteria:</h3>
+            <ul style={{ fontSize: '0.875rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '6px', listStyleType: 'disc', paddingLeft: '20px' }}>
+              <li><strong>Mathematics</strong> questions carry <strong>+2 marks</strong> for each correct response.</li>
+              <li><strong>Physics, Chemistry, and Biology</strong> questions carry <strong>+1 mark</strong> for each correct option.</li>
+              <li>There is <strong>no negative marking</strong> for incorrect or unattempted responses.</li>
+              <li>The timer cannot be paused once started. Ensure you have a stable connection.</li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px' }}>Keyboard & Mouse Navigation Controls:</h3>
+            <ul style={{ fontSize: '0.875rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '6px', listStyleType: 'disc', paddingLeft: '20px' }}>
+              <li>Use the options list to select your choice.</li>
+              <li>Click <strong>Save & Next</strong> to save the answer and advance to the next question.</li>
+              <li>Click <strong>Mark for Review & Next</strong> to flag the question for review while skipping or answering.</li>
+              <li>Use the right-side <strong>Question Palette Grid</strong> to jump directly to any question.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="checkbox"
+            id="instructions-agree"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.target.checked)}
+            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+          />
+          <label htmlFor="instructions-agree" style={{ fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', color: 'var(--text-main)' }}>
+            I have read and understood all exam rules and confirm my system readiness.
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
+          <button onClick={() => setSelectedLobbyTest(null)} className="btn btn-secondary">
+            Cancel
+          </button>
+          <button
+            onClick={handleBeginActualExam}
+            className="btn btn-primary"
+            disabled={!agreedToTerms}
+          >
+            Begin Exam
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Render score details / answer reviews
   if (reviewAttempt) {
-    const matchedTest = mockTests.find(t => t.id === reviewAttempt.testId) || { questions: questions };
+    const matchedTest = tests.find(t => t.id === reviewAttempt.testId) || { questions: questions };
     
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -321,7 +506,7 @@ export const MockTestEngine: React.FC = () => {
           </div>
 
           {/* Question Breakdown and Solutions */}
-          <div style={{ overflowY: 'auto', maxHeight: '70vh', paddingRight: '12px' }}>
+          <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', paddingRight: '12px' }}>
             <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Review Questions & Solutions</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {matchedTest.questions.map((q, idx) => {
@@ -489,14 +674,26 @@ export const MockTestEngine: React.FC = () => {
               </button>
             </div>
             
-            <button 
-              onClick={handleSaveAndNext} 
-              className="btn btn-primary btn-sm"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <span>Save & Next</span>
-              <ChevronRight size={14} />
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {isSelected && (
+                <button
+                  onClick={handleSaveAndNext}
+                  className="btn btn-sm"
+                  style={{ backgroundColor: '#10b981', color: 'white', display: 'flex', alignItems: 'center', gap: '6px', border: 'none', cursor: 'pointer' }}
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Submit Question</span>
+                </button>
+              )}
+              <button 
+                onClick={handleSaveAndNext} 
+                className="btn btn-primary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span>Save & Next</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -567,6 +764,23 @@ export const MockTestEngine: React.FC = () => {
     );
   }
 
+  // Helper to categorize tests
+  const getTestCategory = (test: MockTest): 'Complete' | 'Chapter' | 'Subject' => {
+    const name = test.name.toLowerCase();
+    if (name.includes('full syllabus') || test.subjects.length > 2) {
+      return 'Complete';
+    } else if (name.includes('chapterwise') || name.includes('special')) {
+      return 'Chapter';
+    } else {
+      return 'Subject';
+    }
+  };
+
+  const filteredTests = tests.filter(test => {
+    if (selectedCategory === 'All') return true;
+    return getTestCategory(test) === selectedCategory;
+  });
+
   // Default Mock Test Lobby List
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -579,64 +793,136 @@ export const MockTestEngine: React.FC = () => {
         </p>
       </div>
 
+      {/* Category Selection Hub */}
+      <div style={{ display: 'flex', gap: '10px', backgroundColor: 'var(--primary-light)', padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', width: 'fit-content' }}>
+        {(['All', 'Complete', 'Chapter', 'Subject'] as const).map(cat => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`btn btn-xs ${selectedCategory === cat ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ height: '32px', padding: '0 16px', borderRadius: '6px' }}
+          >
+            {cat === 'All' ? 'All Tests' : cat === 'Complete' ? 'Complete Syllabus' : cat === 'Chapter' ? 'Chapter-wise' : 'Subject-wise'}
+          </button>
+        ))}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', alignItems: 'start' }}>
         {/* Mock test series cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '1.15rem' }}>Available Test Mock Series</h3>
-          {mockTests.map(test => (
-            <div key={test.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '4px' }}>{test.name}</h4>
-                <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <span>Duration: <strong>{test.duration} minutes</strong></span>
-                  <span>•</span>
-                  <span>Questions: <strong>{test.questions.length} MCQs</strong></span>
-                  <span>•</span>
-                  <span>Subjects: <strong>{test.subjects.join(', ')}</strong></span>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Available Mock Exams</h3>
+          {isLoading ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading exams from backend...</p>
+          ) : filteredTests.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No exams found in this category.</p>
+          ) : (
+            filteredTests.map(test => (
+              <div key={test.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.2s hover' }}>
+                <div>
+                  <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '4px' }}>{test.name}</h4>
+                  <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <span>Duration: <strong>{test.duration} minutes</strong></span>
+                    <span>•</span>
+                    <span>Questions: <strong>{test.questions.length} MCQs</strong></span>
+                    <span>•</span>
+                    <span>Subjects: <strong>{test.subjects.join(', ')}</strong></span>
+                  </div>
                 </div>
+                <button onClick={() => handleStartTest(test)} className="btn btn-primary btn-sm">
+                  Begin Simulator
+                </button>
               </div>
-              <button onClick={() => handleStartTest(test)} className="btn btn-primary btn-sm">
-                Begin Simulator
-              </button>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
-        {/* Historical score summaries */}
-        <div className="card">
-          <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Previous Score Logs</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {attempts.map(att => (
-              <div 
-                key={att.id} 
-                className="card" 
-                style={{ 
-                  padding: '12px', 
-                  boxShadow: 'none', 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  backgroundColor: 'var(--primary-light)'
-                }}
-              >
-                <div>
-                  <h4 style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {att.testName}
-                  </h4>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{att.date}</span>
+        {/* Side Panel: Leaderboard & Scores */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Peer Leaderboard UI */}
+          <div className="card" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '1.15rem', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Award size={18} style={{ color: '#f59e0b' }} /> Peer Standings & Ranks
+            </h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[
+                { rank: 1, name: 'Amit Patil', percentile: 99.85, accuracy: '95%', target: 'PCM', active: false },
+                { rank: 2, name: 'Neha Deshmukh', percentile: 99.20, accuracy: '92%', target: 'PCB', active: false },
+                { rank: 3, name: 'Pranav Joshi', percentile: 98.75, accuracy: '89%', target: 'PCMB', active: false },
+                { 
+                  rank: 4, 
+                  name: 'Rahul Sharma (You)', 
+                  percentile: attempts.length > 0 ? attempts[0].feedback?.aiSuggestions[1]?.match(/\d+\.\d+/)?.[0] || 94.20 : 94.20, 
+                  accuracy: attempts.length > 0 ? `${attempts[0].accuracy}%` : '82%', 
+                  target: 'PCMB', 
+                  active: true 
+                },
+                { rank: 5, name: 'Sayali Kulkarni', percentile: 93.10, accuracy: '80%', target: 'PCM', active: false },
+              ].map(peer => (
+                <div 
+                  key={peer.rank} 
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    padding: '8px 12px', 
+                    borderRadius: '6px', 
+                    backgroundColor: peer.active ? 'var(--primary-light)' : 'transparent',
+                    border: peer.active ? '1px solid var(--accent)' : '1px solid transparent',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <strong style={{ color: peer.rank === 1 ? '#d97706' : peer.rank === 2 ? '#6b7280' : peer.rank === 3 ? '#b45309' : 'var(--text-main)', fontSize: '0.95rem' }}>
+                      #{peer.rank}
+                    </strong>
+                    <span style={{ fontWeight: peer.active ? 700 : 500 }}>{peer.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{peer.target}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{peer.percentile}%ile</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{att.score}/{att.maxScore}</span>
-                  <button onClick={() => setReviewAttempt(att)} className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }}>
-                    Review
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
 
-            {attempts.length === 0 && (
-              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No exam logs recorded yet.</p>
-            )}
+          {/* Historical score summaries */}
+          <div className="card">
+            <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Previous Score Logs</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {attempts.map(att => (
+                <div 
+                  key={att.id} 
+                  className="card" 
+                  style={{ 
+                    padding: '12px', 
+                    boxShadow: 'none', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    backgroundColor: 'var(--primary-light)'
+                  }}
+                >
+                  <div>
+                    <h4 style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {att.testName}
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{att.date}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{att.score}/{att.maxScore}</span>
+                    <button onClick={() => setReviewAttempt(att)} className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }}>
+                      Review
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {attempts.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No exam logs recorded yet.</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

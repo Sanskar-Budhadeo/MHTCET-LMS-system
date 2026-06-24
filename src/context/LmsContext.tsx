@@ -38,6 +38,11 @@ interface LmsContextType {
   strongTopics: string[];
   generateAdaptiveQuiz: (subject: string, topic: string) => Question[];
   addCalendarEvent: (e: Omit<CalendarEvent, 'id'>) => void;
+  runTour: boolean;
+  setRunTour: (run: boolean) => void;
+  upgradeUserPlan: (plan: 'Pro' | 'Premium', targetCourse: 'PCB' | 'PCM' | 'PCMB', targetExam: 'JEE' | 'NEET' | 'MHT-CET') => Promise<void>;
+  isMockTestActive: boolean;
+  setIsMockTestActive: (active: boolean) => void;
 }
 
 const LmsContext = createContext<LmsContextType | undefined>(undefined);
@@ -160,7 +165,7 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Reset mock lists for live authenticated session
     setAttempts([]);
     setNotes([]);
-    setEvents([]);
+    setEvents(initialEvents);
   };
 
   const logout = () => {
@@ -168,7 +173,7 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveUser(null);
     setAttempts([]);
     setNotes([]);
-    setEvents([]);
+    setEvents(initialEvents);
   };
 
   const addQuestion = (q: Omit<Question, 'id'>) => {
@@ -363,6 +368,45 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return match.slice(0, 5);
   };
 
+  const [runTour, setRunTour] = useState(false);
+  const [isMockTestActive, setIsMockTestActive] = useState<boolean>(false);
+
+  const upgradeUserPlan = async (plan: 'Pro' | 'Premium', targetCourse: 'PCB' | 'PCM' | 'PCMB', targetExam: 'JEE' | 'NEET' | 'MHT-CET') => {
+    const token = localStorage.getItem('mht_cet_token');
+    try {
+      const response = await fetch('http://localhost:5000/api/user/upgrade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ plan, targetCourse, targetExam })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to upgrade subscription on server');
+      }
+      const data = await response.json();
+      if (data.success && data.user) {
+        setActiveUser(prev => prev ? { ...prev, ...data.user } : data.user);
+        alert(`Successfully upgraded to ${plan}! Invoice reference: ${data.user.invoiceId}`);
+      }
+    } catch (err: any) {
+      console.error('[UPGRADE ERROR]', err);
+      setActiveUser(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          plan,
+          targetCourse,
+          targetExam,
+          invoiceId: `INV-MOCK-UPGRADE-${Date.now()}`,
+          invoiceUrl: `/public/invoices/mock.pdf`
+        };
+      });
+      alert(`Upgraded to ${plan} (offline mockup mode).`);
+    }
+  };
+
   const addCalendarEvent = (e: Omit<CalendarEvent, 'id'>) => {
     const newEvent: CalendarEvent = {
       ...e,
@@ -394,7 +438,12 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         weakTopics,
         strongTopics,
         generateAdaptiveQuiz,
-        addCalendarEvent
+        addCalendarEvent,
+        runTour,
+        setRunTour,
+        upgradeUserPlan,
+        isMockTestActive,
+        setIsMockTestActive
       }}
     >
       {children}

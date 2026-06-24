@@ -51,12 +51,20 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: 'student' | 'parent' | 'admin';
+  role: 'student' | 'parent' | 'admin' | 'teacher' | 'executive';
   studentId?: string; // for parent linkages
   streak?: number;
   weakTopics?: string[];
   strongTopics?: string[];
   loginDates?: string[]; // ISO Date strings
+  targetCourse?: 'PCB' | 'PCM' | 'PCMB';
+  targetExam?: 'JEE' | 'NEET' | 'MHT-CET';
+  plan?: 'Free' | 'Pro' | 'Premium';
+  subscriptionTier?: 'Free' | 'Pro' | 'Premium';
+  prn?: string;
+  status?: string;
+  invoiceUrl?: string;
+  invoiceId?: string;
 }
 
 // 1. Initial MCQ Seed Database (MHT-CET Level PCMB Questions)
@@ -480,7 +488,36 @@ export interface CalendarEvent {
   subject?: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' | 'General';
 }
 
-export const initialEvents: CalendarEvent[] = [];
+export const initialEvents: CalendarEvent[] = [
+  {
+    id: 'ev1',
+    title: 'MHT-CET PCMB Full Syllabus Test 1 (Scheduled)',
+    date: '2026-07-02 09:00 AM',
+    type: 'Test',
+    subject: 'General'
+  },
+  {
+    id: 'ev2',
+    title: 'Physics & Chemistry Chapterwise Mock 1 (Scheduled)',
+    date: '2026-06-28 02:00 PM',
+    type: 'Test',
+    subject: 'Physics'
+  },
+  {
+    id: 'ev3',
+    title: 'Mathematics Special Vectors & Calculus Mock (Scheduled)',
+    date: '2026-07-05 10:00 AM',
+    type: 'Test',
+    subject: 'Mathematics'
+  },
+  {
+    id: 'ev4',
+    title: 'Organic Chemistry Revision Live Seminar',
+    date: '2026-06-26 04:00 PM',
+    type: 'Lecture',
+    subject: 'Chemistry'
+  }
+];
 
 // 6. User Notes Canvas Database
 export interface UserNote {

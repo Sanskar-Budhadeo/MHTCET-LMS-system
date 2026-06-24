@@ -3,43 +3,43 @@
 
 :root {
   /* HSL Tailored Color Palette */
-  --primary: hsl(222, 47%, 11%);      /* Deep Slate/Blue */
-  --primary-light: hsl(215, 20%, 95%);
-  --accent: hsl(220, 90%, 56%);       /* Professional Accent Blue */
-  --accent-hover: hsl(220, 85%, 48%);
+  --primary: hsl(222, 35%, 15%);      /* Deep Slate/Blue */
+  --primary-light: hsl(215, 20%, 96%);
+  --accent: hsl(220, 65%, 48%);       /* Clean Slate Blue */
+  --accent-hover: hsl(220, 60%, 40%);
   
-  --bg-app: hsl(210, 20%, 98%);       /* Crisp greyish white background */
-  --bg-card: hsl(0, 0%, 100%);        /* White card panels */
+  --bg-app: hsl(210, 16%, 98%);       /* Soft light background */
+  --bg-card: hsl(0, 0%, 100%);        /* Crisp white panels */
   
   /* Borders and Separators */
-  --border: hsl(214, 32%, 91%);
-  --border-focus: hsl(220, 90%, 75%);
+  --border: hsl(214, 20%, 93%);
+  --border-focus: hsl(220, 65%, 75%);
   
   /* Typography Colors */
-  --text-main: hsl(222, 47%, 11%);
-  --text-muted: hsl(215, 16%, 47%);
-  --text-light: hsl(215, 20%, 65%);
+  --text-main: hsl(222, 30%, 15%);
+  --text-muted: hsl(215, 14%, 48%);
+  --text-light: hsl(215, 16%, 66%);
   
-  /* Status Colors */
-  --success: #10b981;                 /* Emerald Green */
-  --success-bg: #ecfdf5;
-  --warning: #f59e0b;                 /* Amber Warning */
+  /* Status Colors (Softer, cleaner colors) */
+  --success: #059669;                 
+  --success-bg: #f0fdf4;
+  --warning: #d97706;                 
   --warning-bg: #fffbeb;
-  --danger: #ef4444;                  /* Red Alert */
+  --danger: #dc2626;                  
   --danger-bg: #fef2f2;
-  --info: #06b6d4;                    /* Cyan Info */
+  --info: #0891b2;                    
   --info-bg: #ecfeff;
   
-  /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  /* Shadows (Softer, clean look) */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.02);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.04), 0 4px 6px -2px rgba(15, 23, 42, 0.02);
   
   /* Miscellaneous */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-display: 'Outfit', var(--font-sans);
 }
@@ -47,28 +47,28 @@
 /* Dark Mode Tokens override */
 [data-theme="dark"] {
   --primary: hsl(215, 20%, 95%);
-  --primary-light: hsl(222, 47%, 16%);
-  --accent: hsl(217, 91%, 60%);
-  --accent-hover: hsl(217, 85%, 55%);
+  --primary-light: hsl(222, 30%, 15%);
+  --accent: hsl(217, 65%, 58%);
+  --accent-hover: hsl(217, 60%, 50%);
   
-  --bg-app: hsl(222, 47%, 6%);
-  --bg-card: hsl(222, 47%, 11%);
+  --bg-app: hsl(222, 35%, 6%);
+  --bg-card: hsl(222, 35%, 10%);
   
-  --border: hsl(222, 47%, 16%);
-  --border-focus: hsl(217, 91%, 35%);
+  --border: hsl(222, 30%, 14%);
+  --border-focus: hsl(217, 65%, 35%);
   
   --text-main: hsl(210, 20%, 98%);
-  --text-muted: hsl(215, 16%, 70%);
-  --text-light: hsl(215, 20%, 55%);
+  --text-muted: hsl(215, 12%, 72%);
+  --text-light: hsl(215, 14%, 56%);
   
-  --success-bg: rgba(16, 185, 129, 0.1);
-  --warning-bg: rgba(245, 158, 11, 0.1);
-  --danger-bg: rgba(239, 68, 68, 0.1);
-  --info-bg: rgba(6, 182, 212, 0.1);
+  --success-bg: rgba(5, 150, 105, 0.1);
+  --warning-bg: rgba(217, 119, 6, 0.1);
+  --danger-bg: rgba(220, 38, 38, 0.1);
+  --info-bg: rgba(8, 145, 178, 0.1);
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
 }
 
 * {
@@ -498,7 +498,7 @@ a:hover {
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 24px;
-  height: calc(100vh - 150px);
+  height: calc(100vh - 190px);
   overflow: hidden;
 }
 
