@@ -62,6 +62,7 @@ export interface UserProfile {
   plan?: 'Free' | 'Pro' | 'Premium';
   subscriptionTier?: 'Free' | 'Pro' | 'Premium';
   prn?: string;
+  phone?: string;
   status?: string;
   invoiceUrl?: string;
   invoiceId?: string;

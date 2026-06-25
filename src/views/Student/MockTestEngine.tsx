@@ -1,17 +1,82 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLms } from '../../context/LmsContext';
 import { MockTest, Question, TestAttempt } from '../../data/mockData';
-import { Clock, Eye, AlertCircle, Award, CheckCircle2, XCircle, ChevronRight, HelpCircle, ArrowLeft } from 'lucide-react';
+import { Clock, Eye, AlertCircle, Award, CheckCircle2, XCircle, ChevronRight, HelpCircle, ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
 
 export const MockTestEngine: React.FC = () => {
-  const { mockTests, submitAttempt, attempts, questions, setIsMockTestActive } = useLms();
+  const { mockTests, submitAttempt, attempts, questions, setIsMockTestActive, fetchAttempts, leaderboard } = useLms();
   const [tests, setTests] = useState<MockTest[]>([]);
+
+  useEffect(() => {
+    if (fetchAttempts) fetchAttempts();
+  }, []);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<'All' | 'Complete' | 'Chapter' | 'Subject'>('All');
   const [activeTest, setActiveTest] = useState<MockTest | null>(null);
   const [selectedLobbyTest, setSelectedLobbyTest] = useState<MockTest | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
   const [reviewAttempt, setReviewAttempt] = useState<TestAttempt | null>(null);
+
+  // AI Custom Practice Test Generator states
+  const [aiSubject, setAiSubject] = useState<'Physics' | 'Chemistry' | 'Mathematics' | 'Biology'>('Physics');
+  const [aiTopic, setAiTopic] = useState<string>('');
+  const [aiDifficulty, setAiDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
+  const [generatingAiTest, setGeneratingAiTest] = useState<boolean>(false);
+
+  const handleGenerateAiTest = (e: React.FormEvent) => {
+    e.preventDefault();
+    setGeneratingAiTest(true);
+
+    // Combine questions from context pool and loaded tests to get the largest possible pool
+    const allAvailableQuestions = [
+      ...questions,
+      ...tests.flatMap(t => t.questions)
+    ];
+
+    // Deduplicate by ID
+    const uniqueQuestionsMap = new Map();
+    allAvailableQuestions.forEach(q => {
+      if (q && q.id) {
+        uniqueQuestionsMap.set(q.id, q);
+      }
+    });
+    const deduplicatedQuestions = Array.from(uniqueQuestionsMap.values());
+
+    // Filter questions
+    let match = deduplicatedQuestions.filter(q => q.subject === aiSubject);
+    if (aiTopic.trim()) {
+      match = match.filter(q => q.topic.toLowerCase().includes(aiTopic.toLowerCase().trim()));
+    }
+    match = match.filter(q => q.difficulty === aiDifficulty);
+
+    // Fallbacks if not enough matches found
+    if (match.length < 5) {
+      match = deduplicatedQuestions.filter(q => q.subject === aiSubject && q.difficulty === aiDifficulty);
+    }
+    if (match.length < 5) {
+      match = deduplicatedQuestions.filter(q => q.subject === aiSubject);
+    }
+    if (match.length === 0) {
+      match = deduplicatedQuestions.slice(0, 10);
+    }
+
+    // Select up to 10 questions randomly
+    const shuffled = match.sort(() => 0.5 - Math.random());
+    const selectedQs = shuffled.slice(0, 10);
+
+    setTimeout(() => {
+      const generatedTest: MockTest = {
+        id: 'ai_practice_' + Date.now(),
+        name: `AI Custom Practice - ${aiSubject} (${aiTopic.trim() || 'All Topics'})`,
+        duration: 15, // 15 minutes
+        subjects: [aiSubject],
+        questions: selectedQs
+      };
+
+      setGeneratingAiTest(false);
+      handleStartTest(generatedTest);
+    }, 800); // short delay
+  };
   
   // Test taker state
   const [currentQIndex, setCurrentQIndex] = useState<number>(0);
@@ -810,6 +875,77 @@ export const MockTestEngine: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', alignItems: 'start' }}>
         {/* Mock test series cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* AI Custom Practice Test Generator Card */}
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <Sparkles size={18} style={{ color: 'var(--accent)' }} /> AI Custom Practice Exam Generator
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.825rem', margin: 0 }}>
+              Generate a custom 10-question practice test matching your choice of subject, chapter/topic, and difficulty.
+            </p>
+            <form onSubmit={handleGenerateAiTest} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', alignItems: 'end' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Subject</label>
+                <select
+                  value={aiSubject}
+                  onChange={e => setAiSubject(e.target.value as any)}
+                  className="form-select"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '0.85rem' }}
+                >
+                  <option value="Physics">Physics</option>
+                  <option value="Chemistry">Chemistry</option>
+                  <option value="Mathematics">Mathematics</option>
+                  <option value="Biology">Biology</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Chapter / Topic Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rotational Dynamics"
+                  value={aiTopic}
+                  onChange={e => setAiTopic(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Difficulty Level</label>
+                <select
+                  value={aiDifficulty}
+                  onChange={e => setAiDifficulty(e.target.value as any)}
+                  className="form-select"
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', fontSize: '0.85rem' }}
+                >
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={generatingAiTest}
+                style={{ width: '100%', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                {generatingAiTest ? (
+                  <>
+                    <Loader2 size={16} className="spinner" />
+                    <span>Analyzing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    <span>Launch AI Exam</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+
           <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Available Mock Exams</h3>
           {isLoading ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Loading exams from backend...</p>
@@ -844,53 +980,59 @@ export const MockTestEngine: React.FC = () => {
               <Award size={18} style={{ color: '#f59e0b' }} /> Peer Standings & Ranks
             </h3>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {[
-                { rank: 1, name: 'Amit Patil', percentile: 99.85, accuracy: '95%', target: 'PCM', active: false },
-                { rank: 2, name: 'Neha Deshmukh', percentile: 99.20, accuracy: '92%', target: 'PCB', active: false },
-                { rank: 3, name: 'Pranav Joshi', percentile: 98.75, accuracy: '89%', target: 'PCMB', active: false },
-                { 
-                  rank: 4, 
-                  name: 'Rahul Sharma (You)', 
-                  percentile: attempts.length > 0 ? attempts[0].feedback?.aiSuggestions[1]?.match(/\d+\.\d+/)?.[0] || 94.20 : 94.20, 
-                  accuracy: attempts.length > 0 ? `${attempts[0].accuracy}%` : '82%', 
-                  target: 'PCMB', 
-                  active: true 
-                },
-                { rank: 5, name: 'Sayali Kulkarni', percentile: 93.10, accuracy: '80%', target: 'PCM', active: false },
-              ].map(peer => (
-                <div 
-                  key={peer.rank} 
-                  style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center', 
-                    padding: '8px 12px', 
-                    borderRadius: '6px', 
-                    backgroundColor: peer.active ? 'var(--primary-light)' : 'transparent',
-                    border: peer.active ? '1px solid var(--accent)' : '1px solid transparent',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <strong style={{ color: peer.rank === 1 ? '#d97706' : peer.rank === 2 ? '#6b7280' : peer.rank === 3 ? '#b45309' : 'var(--text-main)', fontSize: '0.95rem' }}>
-                      #{peer.rank}
-                    </strong>
-                    <span style={{ fontWeight: peer.active ? 700 : 500 }}>{peer.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{peer.target}</span>
-                    <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{peer.percentile}%ile</span>
-                  </div>
-                </div>
-              ))}
+            <div className="table-container" style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Student</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center' }}>Ovr</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center' }}>JEE</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center' }}>NEET</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'center' }}>CET</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>%ile</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard && leaderboard.length > 0 ? (
+                    leaderboard.slice(0, 10).map(peer => (
+                      <tr 
+                        key={peer.id} 
+                        style={{ 
+                          backgroundColor: peer.active ? 'var(--primary-light)' : 'transparent',
+                          fontWeight: peer.active ? 600 : 400
+                        }}
+                      >
+                        <td style={{ padding: '8px 4px', textAlign: 'left' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{peer.name}</span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-light)' }}>{peer.course}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>#{peer.rank}</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.jee === 'number' ? `#${peer.jee}` : peer.jee}</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.neet === 'number' ? `#${peer.neet}` : peer.neet}</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.cet === 'number' ? `#${peer.cet}` : peer.cet}</td>
+                        <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700 }}>
+                          {typeof peer.percentile === 'number' ? `${peer.percentile.toFixed(2)}%` : peer.percentile}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                        No leaderboard data available.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
           {/* Historical score summaries */}
           <div className="card">
             <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Previous Score Logs</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: '4px' }}>
               {attempts.map(att => (
                 <div 
                   key={att.id} 
@@ -901,16 +1043,28 @@ export const MockTestEngine: React.FC = () => {
                     display: 'flex', 
                     justifyContent: 'space-between', 
                     alignItems: 'center',
-                    backgroundColor: 'var(--primary-light)'
+                    backgroundColor: 'var(--primary-light)',
+                    flexShrink: 0
                   }}
                 >
-                  <div>
-                    <h4 style={{ fontSize: '0.85rem', fontWeight: 600, margin: 0, maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <h4 
+                      style={{ 
+                        fontSize: '0.85rem', 
+                        fontWeight: 600, 
+                        margin: 0, 
+                        maxWidth: '160px', 
+                        whiteSpace: 'nowrap', 
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis' 
+                      }}
+                      title={att.testName}
+                    >
                       {att.testName}
                     </h4>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>{att.date}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{att.score}/{att.maxScore}</span>
                     <button onClick={() => setReviewAttempt(att)} className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }}>
                       Review

@@ -103,8 +103,42 @@ const AppContent: React.FC = () => {
 
       // Admin Portal
       case 'admin-dashboard':
+      case 'admin-performance':
         return (
           <AdminDashboard
+            activeSection="performance"
+            setCurrentTab={setCurrentTab}
+            setSelectedAttemptIdForFeedback={setSelectedAttemptIdForFeedback}
+          />
+        );
+      case 'admin-toppers':
+        return (
+          <AdminDashboard
+            activeSection="toppers"
+            setCurrentTab={setCurrentTab}
+            setSelectedAttemptIdForFeedback={setSelectedAttemptIdForFeedback}
+          />
+        );
+      case 'admin-participation':
+        return (
+          <AdminDashboard
+            activeSection="participation"
+            setCurrentTab={setCurrentTab}
+            setSelectedAttemptIdForFeedback={setSelectedAttemptIdForFeedback}
+          />
+        );
+      case 'admin-users':
+        return (
+          <AdminDashboard
+            activeSection="users"
+            setCurrentTab={setCurrentTab}
+            setSelectedAttemptIdForFeedback={setSelectedAttemptIdForFeedback}
+          />
+        );
+      case 'admin-settings':
+        return (
+          <AdminDashboard
+            activeSection="settings"
             setCurrentTab={setCurrentTab}
             setSelectedAttemptIdForFeedback={setSelectedAttemptIdForFeedback}
           />
@@ -119,9 +153,11 @@ const AppContent: React.FC = () => {
       case 'parent-ranking':
         return <ParentDashboard activeSection="ranking" />;
 
-      // Teacher Portal
+       // Teacher Portal
       case 'teacher-dashboard':
-        return <TeacherDashboard />;
+        return <TeacherDashboard view="dashboard" />;
+      case 'teacher-tracking':
+        return <TeacherDashboard view="tracking" />;
       case 'teacher-generator':
         return <TestGenerator />;
       case 'teacher-materials':
@@ -136,7 +172,13 @@ const AppContent: React.FC = () => {
 
       // Executive Portal
       case 'executive-dashboard':
-        return <ExecutiveDashboard />;
+        return <ExecutiveDashboard activeSection="analytics" />;
+      case 'executive-finance':
+        return <ExecutiveDashboard activeSection="finance" />;
+      case 'executive-acquisition':
+        return <ExecutiveDashboard activeSection="acquisition" />;
+      case 'executive-health':
+        return <ExecutiveDashboard activeSection="health" />;
 
       default:
         return (

@@ -274,7 +274,9 @@ router.get('/api/analytics/parent/:studentId', authMiddleware, async (req, res, 
         name: student.name,
         email: student.email,
         streak: student.streak || student.streaks || 0,
+        hoursStudied: student.hoursStudied || 0,
         weakTopics: student.weakTopics || [],
+        strongTopics: student.strongTopics || [],
         loginDates: student.loginDates || []
       },
       recentAttempts

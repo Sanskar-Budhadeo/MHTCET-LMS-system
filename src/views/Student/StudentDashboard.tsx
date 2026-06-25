@@ -21,7 +21,7 @@ interface StudentDashboardProps {
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTab }) => {
-  const { activeUser, events, attempts, weakTopics, upgradeUserPlan } = useLms();
+  const { activeUser, events, attempts, questions, weakTopics, upgradeUserPlan, fetchEvents, fetchAttempts, stats, setStats, fetchStats } = useLms();
   
   // Dynamic MHT-CET Exam countdown
   const examDate = new Date('2027-05-12T00:00:00');
@@ -40,6 +40,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
   const [upiId, setUpiId] = useState('student@okaxis');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const handleSimulatedUpgrade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,56 +57,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
     }, 1500);
   };
 
-  // Dynamic Dashboard Stats State
-  const [stats, setStats] = useState<{
-    streaks: number;
-    hoursStudied: number;
-    completedTasks: number;
-    dailyGoalProgress: number;
-    avgAccuracy: number;
-    totalTests: number;
-    weakTopicsCount: number;
-    tasks: { _id: string; text: string; completed: boolean }[];
-    savedNotesCount: number;
-  }>({
-    streaks: 0,
-    hoursStudied: 0,
-    completedTasks: 0,
-    dailyGoalProgress: 0,
-    avgAccuracy: 0,
-    totalTests: 0,
-    weakTopicsCount: 0,
-    tasks: [],
-    savedNotesCount: 0
-  });
-
   const [newTaskText, setNewTaskText] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  const fetchStats = async () => {
-    const token = localStorage.getItem('mht_cet_token');
-    if (!token) return;
-
-    try {
-      const response = await fetch('http://localhost:5000/api/user/dashboard-stats', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (err) {
-      console.error('Error fetching dashboard stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchStats();
-  }, [attempts]); // Re-fetch stats when attempts count changes
+    if (fetchEvents) fetchEvents();
+    if (fetchAttempts) fetchAttempts();
+    if (fetchStats) fetchStats();
+  }, []);
 
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,105 +176,227 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
     }
   };
 
-  // Dynamically calculate syllabus progress from actual test attempts
-  const getSubjectMastery = (subjectName: string, totalChapters: number) => {
-    const subjectAttempts = attempts.filter(att => att.subject === subjectName);
-    // Count unique chapters with score >= 70% accuracy
-    const masteredChapters = new Set(
-      subjectAttempts
-        .filter(att => att.accuracy >= 70)
-        .map(att => att.testName)
+  // Dynamically calculate subject-wise progress based on time, tests, quiz accuracy, and multiple factors
+  const getSubjectProgress = (subjectName: string, totalChapters: number) => {
+    // 1. Chapters predefined list
+    const subjectChapters: { [key: string]: string[] } = {
+      Physics: ['Rotational Dynamics', 'Oscillations', 'Mechanical Properties of Fluids'],
+      Chemistry: ['Chemical Kinetics', 'Solid State'],
+      Mathematics: ['Vectors', 'Trigonometric Functions'],
+      Biology: ['Photosynthesis', 'Respiration and Energy Transfer']
+    };
+    const chapters = subjectChapters[subjectName] || [];
+    const limitChapters = chapters.length > 0 ? chapters.length : totalChapters;
+
+    // 2. Tests taken in this subject
+    const subjectAttempts = attempts.filter(att => 
+      att.testName?.toLowerCase().includes(subjectName.toLowerCase()) || 
+      (att.answers && Object.keys(att.answers).some(qId => questions.find(q => q.id === qId)?.subject === subjectName))
     );
+    const testsCount = subjectAttempts.length;
+
+    // 3. Reading factor: Notes created for this subject
+    const subjectNotesCount = stats.savedNotesCount || 0;
+    const notesFactor = Math.min((subjectNotesCount / 4) + 1, 3);
+
+    // 4. Accuracy factor: average accuracy on this subject
+    let totalScoreAcc = 0;
+    subjectAttempts.forEach(att => { totalScoreAcc += att.accuracy; });
+    const avgAcc = testsCount > 0 ? (totalScoreAcc / testsCount) : 0;
+
+    // 5. Time spent factor: fraction of total hours studied allocated to this subject
+    const hoursFactor = stats.hoursStudied > 0 ? (stats.hoursStudied / 4) : 0;
+
+    // Weighted progress percentage calculation incorporating multiple factors
+    // - Base score accuracy contributes 40%
+    // - Tests taken count contributes 30%
+    // - Reading notes count contributes 15%
+    // - Time spent (hoursStudied) contributes 15%
+    let progressPercentage = 0;
+    if (testsCount === 0) {
+      const notesWeight = Math.min((notesFactor / 3) * 100, 100) * 0.5;
+      const timeWeight = Math.min((hoursFactor / 5) * 100, 100) * 0.5;
+      progressPercentage = Math.round(notesWeight + timeWeight);
+    } else {
+      const accWeight = avgAcc * 0.4;
+      const testWeight = Math.min((testsCount / 4) * 100, 100) * 0.3;
+      const notesWeight = Math.min((notesFactor / 3) * 100, 100) * 0.15;
+      const timeWeight = Math.min((hoursFactor / 5) * 100, 100) * 0.15;
+      progressPercentage = Math.round(accWeight + testWeight + notesWeight + timeWeight);
+    }
+
+    const completed = Math.round((progressPercentage / 100) * limitChapters);
+
     return {
-      completed: Math.min(masteredChapters.size, totalChapters),
-      total: totalChapters
+      completed: Math.min(completed, limitChapters),
+      total: limitChapters,
+      percentage: Math.min(progressPercentage, 100)
     };
   };
 
   const subjectProgress = [
-    { subject: 'Physics', ...getSubjectMastery('Physics', 4), badge: 'badge-physics' },
-    { subject: 'Chemistry', ...getSubjectMastery('Chemistry', 4), badge: 'badge-chemistry' },
-    { subject: 'Mathematics', ...getSubjectMastery('Mathematics', 3), badge: 'badge-mathematics' },
-    { subject: 'Biology', ...getSubjectMastery('Biology', 3), badge: 'badge-biology' }
+    { subject: 'Physics', ...getSubjectProgress('Physics', 4), badge: 'badge-physics' },
+    { subject: 'Chemistry', ...getSubjectProgress('Chemistry', 4), badge: 'badge-chemistry' },
+    { subject: 'Mathematics', ...getSubjectProgress('Mathematics', 3), badge: 'badge-mathematics' },
+    { subject: 'Biology', ...getSubjectProgress('Biology', 3), badge: 'badge-biology' }
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Student Details Card */}
-      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderLeft: '4px solid var(--accent)', padding: '24px' }}>
+      {/* Student Details Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
-              Target: {activeUser?.targetExam || 'MHT-CET'} ({activeUser?.targetCourse || 'PCMB'})
+            <span style={{ fontSize: '0.75rem', padding: '4px 12px', borderRadius: '9999px', border: '1px solid var(--border)', backgroundColor: '#09090b', color: 'white', fontWeight: 600 }}>
+              Target: {activeUser?.targetExam || 'MHT-CET'} ({activeUser?.targetCourse || 'PCM'})
             </span>
-            <span className={`badge ${activeUser?.plan === 'Free' ? 'badge-secondary' : 'badge-primary'}`} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {activeUser?.plan === 'Free' ? <Lock size={10} /> : <Zap size={10} />}
+            <span style={{ fontSize: '0.75rem', padding: '4px 12px', borderRadius: '9999px', border: '1px solid var(--border)', backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {activeUser?.plan === 'Free' ? <Lock size={12} /> : <Zap size={12} style={{ color: 'var(--lime-accent-hover)' }} />}
               {activeUser?.plan || 'Free'} Plan
             </span>
           </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, margin: 0 }}>
+          <h2 style={{ fontSize: '2.25rem', fontWeight: 800, letterSpacing: '-0.03em', fontFamily: 'var(--font-display)', margin: 0, display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             Welcome back, {activeUser?.name}!
+            {activeUser?.prn && (
+              <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '8px', backgroundColor: 'var(--primary-light)', border: '1px solid var(--border)', color: 'var(--text-main)', fontWeight: 600 }}>
+                PRN: {activeUser.prn}
+              </span>
+            )}
+            {stats.siteRank && (
+              <span style={{ fontSize: '0.85rem', padding: '4px 12px', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', color: '#d97706', fontWeight: 600 }}>
+                Site Rank: #{stats.siteRank}
+              </span>
+            )}
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '6px' }}>
-            Email: {activeUser?.email} {activeUser?.invoiceId && `| Billing Reference: ${activeUser.invoiceId}`}
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
+            Email: {activeUser?.email} {activeUser?.prn && `| PRN Number: ${activeUser.prn}`} {activeUser?.phone && `| Phone: ${activeUser.phone}`}
           </p>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            onClick={() => setNotificationsEnabled(!notificationsEnabled)} 
+            className="btn btn-secondary btn-sm" 
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '9999px' }}
+          >
+            <span>{notificationsEnabled ? '🔔 Notifications On' : '🔕 Notifications Muted'}</span>
+          </button>
+
           {activeUser?.plan === 'Free' && (
-            <button onClick={() => { setUpgradePlan('Pro'); setShowUpgradeModal(true); }} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button onClick={() => { setUpgradePlan('Pro'); setShowUpgradeModal(true); }} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--lime-accent)', color: '#09090b', border: '1px solid #c4de32' }}>
               <Zap size={14} />
               <span>Upgrade to Pro</span>
             </button>
           )}
+        </div>
       </div>
 
-      {/* Top Banner Stats Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-        {/* Streak card */}
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ backgroundColor: '#fffbeb', color: '#f59e0b', padding: '12px', borderRadius: '10px' }}>
-            <Flame size={28} className="pulse" />
-          </div>
+      {/* Top Banner Stats Grid (Inspired by the Make-style cards) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+        
+        {/* Card 1: Accuracy Index (Operations style) */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '160px' }}>
           <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.streaks} Days</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Active Preparation Streak</div>
-          </div>
-        </div>
-
-        {/* Hours Studied */}
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ backgroundColor: '#eff6ff', color: 'var(--accent)', padding: '12px', borderRadius: '10px' }}>
-            <Clock size={28} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.hoursStudied} Hours</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Hours Studied Tracker</div>
-          </div>
-        </div>
-
-        {/* Daily Goal Progress */}
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ backgroundColor: '#ecfdf5', color: '#10b981', padding: '12px', borderRadius: '10px' }}>
-            <TrendingUp size={28} />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats.dailyGoalProgress}%</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Daily Goals Completed</div>
-          </div>
-        </div>
-
-        {/* Mean Accuracy or Test Score */}
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ backgroundColor: '#fef2f2', color: '#ef4444', padding: '12px', borderRadius: '10px' }}>
-            <ClipboardList size={28} />
-          </div>
-          <div>
-            <div style={{ fontSize: stats.totalTests > 0 ? '1.75rem' : '1.1rem', fontWeight: 800 }}>
-              {stats.totalTests > 0 ? `${stats.avgAccuracy}%` : 'No tests taken yet (or 0%)'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>
+              <span>ACCURACY INDEX</span>
+              <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>{stats.totalTests} tests</span>
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Mean Question Accuracy</div>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, margin: '12px 0 4px', fontFamily: 'var(--font-display)' }}>
+              {stats.totalTests > 0 ? `${stats.avgAccuracy}%` : '0%'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Daily goal progress: {stats.dailyGoalProgress}%
+            </div>
+          </div>
+          {/* Custom cylindrical progress indicators */}
+          <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+            {[1, 2, 3, 4, 5].map((idx) => {
+              const activeCount = Math.ceil(stats.avgAccuracy / 20);
+              return (
+                <div 
+                  key={idx} 
+                  style={{ 
+                    width: '16px', 
+                    height: '28px', 
+                    borderRadius: '8px', 
+                    backgroundColor: idx <= activeCount ? '#09090b' : 'var(--primary-light)',
+                    transition: 'var(--transition)'
+                  }} 
+                />
+              );
+            })}
           </div>
         </div>
+
+        {/* Card 2: Streak Metric (Data Transfer style in Lime Accent) */}
+        <div className="card card-highlight" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '160px' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'rgba(9, 9, 11, 0.6)', fontSize: '0.85rem', fontWeight: 700 }}>
+              <span>ACTIVE STREAK</span>
+              <span className="badge" style={{ fontSize: '0.65rem', backgroundColor: 'rgba(9,9,11,0.08)', color: '#09090b' }}>Daily drill</span>
+            </div>
+            <div style={{ fontSize: '2.5rem', fontWeight: 800, margin: '12px 0 4px', fontFamily: 'var(--font-display)' }}>
+              {stats.streaks} Days
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'rgba(9, 9, 11, 0.6)' }}>
+              Hours Studied: {stats.hoursStudied} hrs
+            </div>
+          </div>
+          {/* Custom cylindrical indicators */}
+          <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
+            {[1, 2, 3, 4, 5].map((idx) => {
+              const activeCount = Math.min(stats.streaks, 5);
+              return (
+                <div 
+                  key={idx} 
+                  style={{ 
+                    width: '16px', 
+                    height: '28px', 
+                    borderRadius: '8px', 
+                    backgroundColor: idx <= activeCount ? '#09090b' : 'rgba(9, 9, 11, 0.15)',
+                    transition: 'var(--transition)'
+                  }} 
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Card 3: Promotion Callout Banner (Upgrade style) */}
+        <div className="card card-dark" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '160px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ zIndex: 2 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--lime-accent)', fontSize: '0.8rem', fontWeight: 700 }}>
+              <Sparkles size={14} />
+              <span>ACADEMIC INTEGRATOR</span>
+            </div>
+            <h4 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '8px 0 4px', color: 'white' }}>
+              Elevate Prep to Next Level
+            </h4>
+            <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', lineHeight: '1.3' }}>
+              {activeUser?.plan === 'Free' ? 'Unlock AI LaTeX doubt solver, rank predictors, and custom reviews.' : 'You have active access to premium AI tutor tools.'}
+            </p>
+          </div>
+          <div style={{ marginTop: '12px', zIndex: 2 }}>
+            {activeUser?.plan === 'Free' ? (
+              <button 
+                onClick={() => { setUpgradePlan('Pro'); setShowUpgradeModal(true); }} 
+                className="btn" 
+                style={{ width: '100%', padding: '8px 16px', fontSize: '0.75rem', backgroundColor: '#ffffff', color: '#09090b', borderRadius: '9999px', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+              >
+                Upgrade Now
+              </button>
+            ) : (
+              <button 
+                onClick={() => setCurrentTab('student-learning')}
+                className="btn" 
+                style={{ width: '100%', padding: '8px 16px', fontSize: '0.75rem', backgroundColor: 'var(--lime-accent)', color: '#09090b', borderRadius: '9999px', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+              >
+                Launch AI Tutor
+              </button>
+            )}
+          </div>
+        </div>
+
       </div>
 
       {/* Main Grid: Syllabus + Goal Checklist / Calendar */}
@@ -324,7 +405,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div className="card">
             <h3 style={{ fontSize: '1.15rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <BookOpen size={18} /> MHT-CET PCMB Syllabus Tracker
+              <BookOpen size={18} /> Subject-wise Progress Tracker
             </h3>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -335,13 +416,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
                       {prog.subject}
                     </span>
                     <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                      {prog.completed}/{prog.total} Chapters Mastered
+                      {prog.percentage}% Progress ({prog.completed}/{prog.total} Chapters)
                     </span>
                   </div>
                   <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--primary-light)', borderRadius: '99px', overflow: 'hidden' }}>
                     <div 
                       style={{ 
-                        width: `${(prog.completed / prog.total) * 100}%`, 
+                        width: `${prog.percentage}%`, 
                         height: '100%', 
                         backgroundColor: prog.subject === 'Physics' ? '#0369a1' : prog.subject === 'Chemistry' ? '#b45309' : prog.subject === 'Mathematics' ? '#a21caf' : '#15803d',
                         borderRadius: '99px' 

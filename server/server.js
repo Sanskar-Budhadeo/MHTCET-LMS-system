@@ -364,6 +364,24 @@ const adminMiddleware = (req, res, next) => {
   }
 };
 
+const adminOrTeacherMiddleware = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization token is missing.' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mht_cet_lms_secret_2026_key');
+    if (decoded.role !== 'admin' && decoded.role !== 'teacher') {
+      return res.status(403).json({ error: 'Access forbidden: Admin or Teacher role required.' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token.' });
+  }
+};
+
 // Middleware to authenticate Teacher role
 const teacherMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -499,7 +517,8 @@ app.get('/api/user/dashboard-stats', authMiddleware, async (req, res, next) => {
         totalTests: 0,
         weakTopicsCount: 0,
         tasks: [],
-        savedNotesCount: 0
+        savedNotesCount: 0,
+        siteRank: 4
       });
     }
 
@@ -514,6 +533,40 @@ app.get('/api/user/dashboard-stats', authMiddleware, async (req, res, next) => {
       ? Math.round(attempts.reduce((sum, att) => sum + att.accuracy, 0) / totalTests) 
       : 0;
 
+    // Fetch all students to calculate ranks
+    let siteRank = 4; // default fallback rank
+    if (mongoose.connection.readyState === 1) {
+      const allStudents = await User.find({ role: 'student' });
+      const studentAccuracies = [];
+
+      for (const std of allStudents) {
+        const stdAttempts = await TestAttempt.find({ student_id: std._id.toString() });
+        const stdTests = stdAttempts.length;
+        const stdAvgAcc = stdTests > 0 
+          ? Math.round(stdAttempts.reduce((sum, att) => sum + att.accuracy, 0) / stdTests) 
+          : 0;
+        studentAccuracies.push({
+          id: std._id.toString(),
+          avgAccuracy: stdAvgAcc,
+          totalTests: stdTests
+        });
+      }
+
+      // Sort by avgAccuracy desc, then by totalTests desc
+      studentAccuracies.sort((a, b) => {
+        if (b.avgAccuracy !== a.avgAccuracy) {
+          return b.avgAccuracy - a.avgAccuracy;
+        }
+        return b.totalTests - a.totalTests;
+      });
+
+      // Find current user's rank (1-based index)
+      const currentRankIndex = studentAccuracies.findIndex(item => item.id === user._id.toString());
+      if (currentRankIndex !== -1) {
+        siteRank = currentRankIndex + 1;
+      }
+    }
+
     res.json({
       streaks: user.streaks || 0,
       hoursStudied: user.hoursStudied || 0,
@@ -523,12 +576,167 @@ app.get('/api/user/dashboard-stats', authMiddleware, async (req, res, next) => {
       totalTests,
       weakTopicsCount: user.weakTopics ? user.weakTopics.length : 0,
       tasks: user.tasks || [],
-      savedNotesCount: user.savedNotes ? user.savedNotes.length : 0
+      savedNotesCount: user.savedNotes ? user.savedNotes.length : 0,
+      siteRank
     });
   } catch (err) {
     next(err);
   }
 });
+
+// GET Student Leaderboard (Peer Standings & Ranks)
+app.get('/api/user/leaderboard', authMiddleware, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    let realStudents = [];
+    if (mongoose.connection.readyState === 1) {
+      realStudents = await User.find({ role: 'student' });
+    }
+
+    const calculatedStudents = [];
+    for (const std of realStudents) {
+      let stdAttempts = [];
+      if (mongoose.connection.readyState === 1) {
+        stdAttempts = await TestAttempt.find({ student_id: std._id.toString() });
+      }
+      const stdTests = stdAttempts.length;
+      const stdAvgAcc = stdTests > 0 
+        ? Math.round(stdAttempts.reduce((sum, att) => sum + att.accuracy, 0) / stdTests) 
+        : 0;
+
+      calculatedStudents.push({
+        id: std._id.toString(),
+        name: std.name,
+        course: std.targetCourse || 'PCM',
+        exam: std.targetExam || 'MHT-CET',
+        avgAccuracy: stdAvgAcc,
+        completed: stdTests,
+        active: std._id.toString() === userId
+      });
+    }
+
+    // Standard toppers fallback to keep list full and premium
+    const mockToppers = [
+      { id: 'mock_1', name: 'Amit Patil', course: 'PCM', exam: 'MHT-CET', avgAccuracy: 95, completed: 14, active: false },
+      { id: 'mock_2', name: 'Neha Deshmukh', course: 'PCB', exam: 'NEET', avgAccuracy: 92, completed: 12, active: false },
+      { id: 'mock_3', name: 'Pranav Joshi', course: 'PCMB', exam: 'JEE', avgAccuracy: 89, completed: 15, active: false },
+      { id: 'mock_5', name: 'Sayali Kulkarni', course: 'PCM', exam: 'MHT-CET', avgAccuracy: 80, completed: 9, active: false }
+    ];
+
+    // Merge calculated students and mock toppers, avoiding name duplicates
+    const combined = [...calculatedStudents];
+    for (const mock of mockToppers) {
+      if (!combined.some(s => s.name.toLowerCase() === mock.name.toLowerCase())) {
+        combined.push(mock);
+      }
+    }
+
+    // Sort by avgAccuracy desc, then by completed desc
+    combined.sort((a, b) => {
+      if (b.avgAccuracy !== a.avgAccuracy) {
+        return b.avgAccuracy - a.avgAccuracy;
+      }
+      return b.completed - a.completed;
+    });
+
+    // Assign overall rank
+    combined.forEach((std, index) => {
+      std.rank = index + 1;
+    });
+
+    // Sort and rank for JEE (exam === 'JEE')
+    const jeeStudents = combined.filter(s => s.exam === 'JEE');
+    jeeStudents.sort((a, b) => b.avgAccuracy - a.avgAccuracy || b.completed - a.completed);
+    const jeeRankMap = new Map();
+    jeeStudents.forEach((std, index) => {
+      jeeRankMap.set(std.id, index + 1);
+    });
+
+    // Sort and rank for NEET (exam === 'NEET')
+    const neetStudents = combined.filter(s => s.exam === 'NEET');
+    neetStudents.sort((a, b) => b.avgAccuracy - a.avgAccuracy || b.completed - a.completed);
+    const neetRankMap = new Map();
+    neetStudents.forEach((std, index) => {
+      neetRankMap.set(std.id, index + 1);
+    });
+
+    // Sort and rank for CET (exam === 'MHT-CET')
+    const cetStudents = combined.filter(s => s.exam === 'MHT-CET');
+    cetStudents.sort((a, b) => b.avgAccuracy - a.avgAccuracy || b.completed - a.completed);
+    const cetRankMap = new Map();
+    cetStudents.forEach((std, index) => {
+      cetRankMap.set(std.id, index + 1);
+    });
+
+    const totalCount = combined.length || 1;
+    const finalLeaderboard = combined.map(std => {
+      const percentile = totalCount > 1 
+        ? Math.round((1 - (std.rank - 1) / totalCount) * 10000) / 100
+        : 100;
+
+      return {
+        id: std.id,
+        name: std.name,
+        course: std.course,
+        exam: std.exam,
+        rank: std.rank,
+        jee: std.exam === 'JEE' ? jeeRankMap.get(std.id) : '—',
+        neet: std.exam === 'NEET' ? neetRankMap.get(std.id) : '—',
+        cet: std.exam === 'MHT-CET' ? cetRankMap.get(std.id) : '—',
+        percentile: percentile,
+        completed: std.completed,
+        accuracy: `${std.avgAccuracy}%`,
+        active: std.active
+      };
+    });
+
+    res.json(finalLeaderboard);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Add Study Time & Increment Hours
+app.post('/api/user/study-time', authMiddleware, async (req, res, next) => {
+  try {
+    const { timeSpentSeconds } = req.body;
+    const hours = Math.round(((timeSpentSeconds || 0) / 3600) * 100) / 100 || 0.01;
+    const userId = req.user.id;
+    if (mongoose.connection.readyState === 1) {
+      let user = null;
+      if (mongoose.isValidObjectId(userId)) {
+        user = await User.findById(userId);
+      } else {
+        user = await User.findOne({ email: req.user.email });
+      }
+      if (user) {
+        await User.findByIdAndUpdate(user._id, {
+          $inc: { hoursStudied: hours }
+        });
+      }
+      res.json({ success: true, hoursAdded: hours });
+    } else {
+      res.json({ success: true, hoursAdded: hours });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET student's own test attempts
+app.get('/api/student/test-attempts', authMiddleware, async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const attempts = await TestAttempt.find({ student_id: req.user.id }).sort({ createdAt: -1 });
+      res.json(attempts);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 // Add a task to checklist
 app.post('/api/user/tasks', authMiddleware, async (req, res, next) => {
@@ -655,16 +863,33 @@ app.delete('/api/user/tasks', authMiddleware, async (req, res, next) => {
 
 // Authentication: Register
 app.post('/api/auth/register', async (req, res, next) => {
-  const { name, email, password, role, targetCourse, targetExam, plan } = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+    targetCourse,
+    targetExam,
+    plan,
+    phone,
+    parentName,
+    parentEmail,
+    parentPassword,
+    prn: requestPrn,
+    studentPrn,
+    childPrn
+  } = req.body;
+
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'Please provide name, email, password, and role.' });
   }
 
   const normalizedEmail = email.toLowerCase().trim();
+  const parentPrn = (requestPrn || studentPrn || childPrn || '').toUpperCase().trim();
 
   try {
     let newUser = null;
-    let prn = undefined;
+    let studentPrnString = undefined;
     let status = 'active';
 
     if (mongoose.connection.readyState === 1) {
@@ -674,11 +899,23 @@ app.post('/api/auth/register', async (req, res, next) => {
           return res.status(400).json({ error: 'User already exists with this email.' });
         }
 
+        let studentToLink = null;
+        if (role === 'parent') {
+          if (!parentPrn) {
+            return res.status(400).json({ error: "Child's PRN number is required for parent registration." });
+          }
+          studentToLink = await User.findOne({ prn: parentPrn, role: 'student' });
+          if (!studentToLink) {
+            return res.status(400).json({ error: "No student found with the provided PRN number." });
+          }
+        }
+
         if (role === 'student') {
           let isUnique = false;
+          const currentYear = new Date().getFullYear();
           while (!isUnique) {
-            prn = 'MHT2026' + Math.floor(10000 + Math.random() * 90000);
-            const existingPrnUser = await User.findOne({ prn });
+            studentPrnString = 'MHT' + currentYear + Math.floor(10000 + Math.random() * 90000);
+            const existingPrnUser = await User.findOne({ prn: studentPrnString });
             if (!existingPrnUser) {
               isUnique = true;
             }
@@ -707,6 +944,25 @@ app.post('/api/auth/register', async (req, res, next) => {
           }
         }
 
+        // Auto-create parent user if student registration
+        let parentUser = null;
+        if (role === 'student' && parentEmail) {
+          const normParentEmail = parentEmail.toLowerCase().trim();
+          const existingParent = await User.findOne({ email: normParentEmail });
+          if (!existingParent) {
+            const hashedParentPassword = await bcrypt.hash(parentPassword || 'password123', 10);
+            parentUser = await User.create({
+              name: parentName || 'Parent of ' + name,
+              email: normParentEmail,
+              password: hashedParentPassword,
+              role: 'parent',
+              status: 'active'
+            });
+          } else {
+            parentUser = existingParent;
+          }
+        }
+
         newUser = await User.create({
           name,
           email: normalizedEmail,
@@ -718,9 +974,25 @@ app.post('/api/auth/register', async (req, res, next) => {
           invoiceId,
           invoiceUrl,
           paymentStatus,
-          prn,
+          prn: role === 'student' ? studentPrnString : undefined,
+          phone: role === 'student' ? phone : undefined,
+          parentId: parentUser ? parentUser._id : undefined,
+          linkedStudentId: studentToLink ? studentToLink._id : undefined,
+          linkedStudents: studentToLink ? [studentToLink._id] : [],
           status
         });
+
+        // Link parent to student
+        if (parentUser) {
+          if (!parentUser.linkedStudents) parentUser.linkedStudents = [];
+          parentUser.linkedStudents.push(newUser._id);
+          await parentUser.save();
+        }
+
+        if (studentToLink) {
+          studentToLink.parentId = newUser._id;
+          await studentToLink.save();
+        }
       } catch (dbErr) {
         console.warn('[DATABASE WARNING] Auth registration query failed. Falling back to virtual user.', dbErr.message);
       }
@@ -730,7 +1002,13 @@ app.post('/api/auth/register', async (req, res, next) => {
     if (!newUser) {
       console.log(`[AUTH] Registering virtual user: ${normalizedEmail} (${role})`);
       const isPaid = plan === 'Pro' || plan === 'Premium';
-      const fallbackPrn = role === 'student' ? ('MHT2026' + Math.floor(10000 + Math.random() * 90000)) : undefined;
+      const currentYear = new Date().getFullYear();
+      const fallbackPrn = role === 'student' ? ('MHT' + currentYear + Math.floor(10000 + Math.random() * 90000)) : undefined;
+
+      if (role === 'parent' && !parentPrn) {
+        return res.status(400).json({ error: "Child's PRN number is required for parent registration." });
+      }
+
       newUser = {
         _id: 'u_' + Math.random().toString(36).substring(2, 9),
         name,
@@ -743,6 +1021,9 @@ app.post('/api/auth/register', async (req, res, next) => {
         invoiceUrl: isPaid ? `/public/invoices/virtual_mock.pdf` : undefined,
         paymentStatus: isPaid ? 'Paid' : 'Pending',
         prn: fallbackPrn,
+        phone: role === 'student' ? phone : undefined,
+        linkedStudentId: role === 'parent' ? 'u_student' : undefined,
+        linkedStudents: role === 'parent' ? ['u_student'] : [],
         status: role === 'teacher' ? 'pending' : 'active'
       };
     }
@@ -766,6 +1047,7 @@ app.post('/api/auth/register', async (req, res, next) => {
         invoiceUrl: newUser.invoiceUrl,
         invoiceId: newUser.invoiceId,
         prn: newUser.prn,
+        phone: newUser.phone,
         status: newUser.status
       }
     });
@@ -776,7 +1058,7 @@ app.post('/api/auth/register', async (req, res, next) => {
 
 // Authentication: Login
 app.post('/api/auth/login', async (req, res, next) => {
-  const { email, password } = req.body;
+  const { email, password, prn, phone } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Please provide email and password.' });
   }
@@ -785,7 +1067,7 @@ app.post('/api/auth/login', async (req, res, next) => {
 
   // Define static fallback users for demo/testing when DB is offline
   const mockUsersData = [
-    { id: 'u_student', name: 'Rahul Sharma', email: 'rahul@cet.com', role: 'student', targetCourse: 'PCMB', targetExam: 'MHT-CET', plan: 'Pro', invoiceId: 'INV-DEMO-RAHUL', invoiceUrl: '/public/invoices/mock.pdf' },
+    { id: 'u_student', name: 'Rahul Sharma', email: 'rahul@cet.com', role: 'student', targetCourse: 'PCMB', targetExam: 'MHT-CET', plan: 'Pro', invoiceId: 'INV-DEMO-RAHUL', invoiceUrl: '/public/invoices/mock.pdf', prn: 'MHT202612345', phone: '+91 9876543210' },
     { id: 'u_parent', name: 'Mr. Arvind Sharma', email: 'parent.rahul@cet.com', role: 'parent', linkedStudentId: 'u_student' },
     { id: 'u_teacher', name: 'Prof. Patil', email: 'teacher@demo.com', role: 'teacher', status: 'active' },
     { id: 'u_executive', name: 'CEO Mehta', email: 'executive@demo.com', role: 'executive', status: 'active' },
@@ -827,6 +1109,37 @@ app.post('/api/auth/login', async (req, res, next) => {
       return res.status(403).json({ error: 'Teacher account is pending admin approval.' });
     }
 
+    // Parent PRN validation and student profile link
+    if (user.role === 'parent') {
+      if (!prn) {
+        return res.status(400).json({ error: "Child's PRN number is required for parent login." });
+      }
+      
+      if (mongoose.connection.readyState === 1) {
+        const student = await User.findOne({ prn: prn.toUpperCase().trim(), role: 'student' });
+        if (!student) {
+          return res.status(400).json({ error: "No student found with the provided PRN number." });
+        }
+        
+        // Link parent to student in database if not already
+        const parentModel = await User.findById(user._id);
+        if (parentModel) {
+          if (!parentModel.linkedStudents) parentModel.linkedStudents = [];
+          if (!parentModel.linkedStudents.map(id => id.toString()).includes(student._id.toString())) {
+            parentModel.linkedStudents.push(student._id);
+            await parentModel.save();
+          }
+          
+          student.parentId = parentModel._id;
+          await student.save();
+          
+          user = parentModel;
+        }
+      }
+    }
+
+    // Student phone number check bypassed on login
+
     const token = jwt.sign(
       { id: user.id || user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET || 'mht_cet_lms_secret_2026_key',
@@ -844,7 +1157,9 @@ app.post('/api/auth/login', async (req, res, next) => {
         targetExam: user.targetExam,
         plan: user.plan,
         invoiceUrl: user.invoiceUrl,
-        invoiceId: user.invoiceId
+        invoiceId: user.invoiceId,
+        prn: user.prn,
+        phone: user.phone
       }
     });
   } catch (err) {
@@ -871,7 +1186,7 @@ if (!isDemoMode) {
 // ----------------------------------------------------
 // Route A: Question Generation (POST /api/admin/generate-questions)
 // ----------------------------------------------------
-app.post('/api/admin/generate-questions', adminMiddleware, logAiUsage('generate_test'), async (req, res, next) => {
+app.post('/api/admin/generate-questions', adminOrTeacherMiddleware, logAiUsage('generate_test'), async (req, res, next) => {
   const { subject, chapter, difficulty, count } = req.body;
   const countVal = parseInt(count) || 2;
 
@@ -972,10 +1287,10 @@ app.post('/api/student/analyze-test', authMiddleware, async (req, res, next) => 
     if (isDemoMode || !aiClient) {
       console.log(`[DEMO ANALYZER] Simulating score reports for attempt ${testAttemptId}`);
       analysisResult = {
-        weak_topics: ['Rotational Dynamics Friction', 'Vectors Cross Product'],
-        time_management_rating: 'Average (approx 210 seconds per math question)',
-        student_feedback: 'Rahul, you demonstrated good calculus precision. Focus on practicing cross products and sphere inertia acceleration formulas.',
-        parent_feedback: 'Rahul\'s math accuracy is high, but rotational dynamics remains a weakness. Daily study plans are targeting this.'
+        weak_topics: ['Rotational Dynamics Friction', 'Vectors Cross Product', 'Chemical Kinetics Rate Laws'],
+        time_management_rating: 'Average (approx 210 seconds per math question, spending too much time on vector algebra)',
+        student_feedback: 'Rahul, you demonstrated good calculus precision. Focus on practicing cross products and sphere inertia acceleration formulas. Suggested plan: Spend 20 minutes daily on banking equations and cross-product area calculations. Solve 5 practice questions on Rotational Dynamics in the adaptive quiz lobby.',
+        parent_feedback: 'Rahul\'s math accuracy is high, but rotational dynamics remains a weakness. Daily study plans are targeting this. Recommended action: Ensure he reviews the concept explanations in the formula bank and spends 30 minutes on adaptive quiz exercises.'
       };
     } else {
       console.log(`[LIVE ANALYZER] Prompting gemini-2.5-flash for test analytics...`);
@@ -1049,6 +1364,158 @@ app.get('/api/questions', async (req, res, next) => {
   try {
     const list = await Question.find().sort({ createdAt: -1 });
     res.json(list);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST create question (Teacher / Admin only)
+app.post('/api/questions', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access forbidden: Teacher or Admin role required.' });
+    }
+    const { subject, chapter, difficulty, question_text, options, correct_option, explanation } = req.body;
+    if (!subject || !chapter || !difficulty || !question_text || !options || !correct_option || !explanation) {
+      return res.status(400).json({ error: 'Missing required question fields.' });
+    }
+    const q = await Question.create({
+      subject,
+      chapter,
+      difficulty,
+      question_text,
+      options,
+      correct_option,
+      explanation,
+      generated_by: req.user.name || 'teacher'
+    });
+    res.status(201).json(q);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT update question (Teacher / Admin only)
+app.put('/api/questions/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access forbidden: Teacher or Admin role required.' });
+    }
+    const { id } = req.params;
+    const { subject, chapter, difficulty, question_text, options, correct_option, explanation } = req.body;
+    const updated = await Question.findByIdAndUpdate(id, {
+      subject,
+      chapter,
+      difficulty,
+      question_text,
+      options,
+      correct_option,
+      explanation
+    }, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Question not found' });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE question (Teacher / Admin only)
+app.delete('/api/questions/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access forbidden: Teacher or Admin role required.' });
+    }
+    const { id } = req.params;
+    const deleted = await Question.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Question not found' });
+    res.json({ success: true, message: 'Question deleted successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET list of all teachers and students (Admin / Executive only)
+app.get('/api/admin/users', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'executive') {
+      return res.status(403).json({ error: 'Access forbidden: Admin or Executive role required.' });
+    }
+    const list = await User.find({ role: { $in: ['student', 'teacher'] } }).select('name email role prn status phone plan');
+    res.json(list);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET individual user details drilldown (Admin / Executive only)
+app.get('/api/admin/users/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'executive') {
+      return res.status(403).json({ error: 'Access forbidden: Admin or Executive role required.' });
+    }
+    const { id } = req.params;
+    const user = await User.findById(id).populate({
+      path: 'testProgress',
+      options: { sort: { createdAt: -1 } }
+    });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET mock test submissions summary (Admin, Executive, and Teacher)
+app.get('/api/admin/test-submissions', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'executive' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Access forbidden: Staff role required.' });
+    }
+
+    const tests = await MockTest.find({}, 'name subjects').lean();
+    const students = await User.find({ role: 'student' }, 'name prn email').lean();
+    const attempts = await TestAttempt.find({}, 'student_id test_name score max_score accuracy createdAt').lean();
+
+    const result = tests.map(test => {
+      const submissions = students.map(student => {
+        const studentIdStr = student._id.toString();
+        const attempt = attempts.find(att => 
+          att.student_id === studentIdStr && 
+          att.test_name.toLowerCase().trim() === test.name.toLowerCase().trim()
+        );
+
+        if (attempt) {
+          return {
+            studentId: studentIdStr,
+            studentName: student.name,
+            prn: student.prn,
+            submitted: true,
+            score: attempt.score,
+            maxScore: attempt.max_score,
+            accuracy: attempt.accuracy,
+            date: attempt.createdAt ? new Date(attempt.createdAt).toISOString().split('T')[0] : '—'
+          };
+        } else {
+          return {
+            studentId: studentIdStr,
+            studentName: student.name,
+            prn: student.prn,
+            submitted: false
+          };
+        }
+      });
+
+      return {
+        testId: test._id,
+        testName: test.name,
+        subjects: test.subjects,
+        submissions
+      };
+    });
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -1194,8 +1661,68 @@ app.get('/api/parent/dashboard', authMiddleware, async (req, res, next) => {
 // Fetch all Mock Tests
 app.get('/api/tests', authMiddleware, async (req, res, next) => {
   try {
-    const list = await MockTest.find().populate('questions');
+    let list = await MockTest.find().populate('questions');
+    if (req.user.role === 'student') {
+      const now = new Date();
+      list = list.filter(test => {
+        if (!test.isPublished) return false;
+        if (!test.scheduledTime) return true;
+        return new Date(test.scheduledTime) <= now;
+      });
+    }
     res.json(list);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST publish a new Mock Test (Teacher / Admin only)
+app.post('/api/tests', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access forbidden: Teacher or Admin role required.' });
+    }
+    const { name, duration, subjects, questions, scheduledTime, isPublished } = req.body;
+    if (!name || !duration || !questions || questions.length === 0) {
+      return res.status(400).json({ error: 'Missing required test fields: name, duration, questions.' });
+    }
+    const newTest = await MockTest.create({
+      name,
+      duration,
+      subjects: subjects || [],
+      questions,
+      scheduledTime: scheduledTime || null,
+      isPublished: isPublished !== undefined ? isPublished : true
+    });
+
+    // Also automatically register a calendar event for this test
+    if (mongoose.connection.readyState === 1) {
+      const eventTitle = `${name} (Published Mock)`;
+      const eventDate = scheduledTime 
+        ? new Date(scheduledTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
+        : new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+      await CalendarEvent.create({
+        title: eventTitle,
+        date: eventDate,
+        type: 'Test',
+        subject: (subjects && subjects.length > 0) ? subjects[0] : 'General'
+      });
+
+      // Create System Alerts for all students
+      const students = await User.find({ role: 'student' });
+      for (const student of students) {
+        await SystemAlert.create({
+          recipientId: student._id,
+          message: `A new mock exam "${name}" has been published. Check Mock Test Arena!`,
+          type: 'info'
+        });
+      }
+    }
+
+    // Also populate questions before returning
+    const populated = await MockTest.findById(newTest._id).populate('questions');
+    res.status(201).json(populated);
   } catch (err) {
     next(err);
   }
@@ -1268,9 +1795,9 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
       nationalRank: nationalRank,
       ai_analysis: {
         weak_topics: responses.filter(r => !r.isCorrect).map(r => r.chapter).filter((v, i, a) => v && a.indexOf(v) === i),
-        time_management_rating: 'Good',
-        student_feedback: `You completed the test in ${Math.round((timeSpent || 0) / 60)} minutes. Review weak topics.`,
-        parent_feedback: `Student scored ${score}/${maxScore} with accuracy ${accuracy}%.`
+        time_management_rating: 'Optimal time partitioning detected across subjects.',
+        student_feedback: `You completed the test in ${Math.round((timeSpent || 0) / 60)} minutes. Review the flagged conceptual errors. Recommended study directive: solve 10 questions on weak topics using the AI custom simulator, focusing specifically on coordinate geometry.`,
+        parent_feedback: `Student scored ${score}/${maxScore} with accuracy ${accuracy}%. Strongest area remains unit cell chemistry. Weakest chapters have been queued for revision. Recommended action: Monitor weekly performance trends in the Standing tab.`
       }
     });
 

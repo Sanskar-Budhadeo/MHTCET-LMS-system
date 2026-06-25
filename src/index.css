@@ -2,73 +2,78 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* HSL Tailored Color Palette */
-  --primary: hsl(222, 35%, 15%);      /* Deep Slate/Blue */
-  --primary-light: hsl(215, 20%, 96%);
-  --accent: hsl(220, 65%, 48%);       /* Clean Slate Blue */
-  --accent-hover: hsl(220, 60%, 40%);
-  
-  --bg-app: hsl(210, 16%, 98%);       /* Soft light background */
-  --bg-card: hsl(0, 0%, 100%);        /* Crisp white panels */
+  /* HSL Tailored Color Palette & Sage Green Design */
+  --bg-outer: #96a798;
+  --bg-app: #f4f4f5;                  /* Zinc-100 */
+  --bg-card: #ffffff;                 /* Crisp white panels */
+  --primary: #09090b;                 /* Zinc-950 for sidebar */
+  --primary-light: #f4f4f5;
+  --accent: #09090b;                  /* Dark slate/black for primary buttons */
+  --accent-hover: #27272a;
+  --lime-accent: #e2fc5c;             /* Vibrant lime-yellow from screenshot */
+  --lime-accent-hover: #c4de32;
   
   /* Borders and Separators */
-  --border: hsl(214, 20%, 93%);
-  --border-focus: hsl(220, 65%, 75%);
+  --border: #e4e4e7;                  /* Zinc-200 */
+  --border-focus: #a1a1aa;
   
   /* Typography Colors */
-  --text-main: hsl(222, 30%, 15%);
-  --text-muted: hsl(215, 14%, 48%);
-  --text-light: hsl(215, 16%, 66%);
+  --text-main: #09090b;               /* Zinc-950 */
+  --text-muted: #71717a;              /* Zinc-600 */
+  --text-light: #a1a1aa;              /* Zinc-400 */
   
-  /* Status Colors (Softer, cleaner colors) */
-  --success: #059669;                 
-  --success-bg: #f0fdf4;
-  --warning: #d97706;                 
+  /* Status Colors */
+  --success: #10b981;                 
+  --success-bg: #ecfdf5;
+  --warning: #f59e0b;                 
   --warning-bg: #fffbeb;
-  --danger: #dc2626;                  
+  --danger: #ef4444;                  
   --danger-bg: #fef2f2;
-  --info: #0891b2;                    
+  --info: #06b6d4;                    
   --info-bg: #ecfeff;
   
-  /* Shadows (Softer, clean look) */
-  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.02);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.04), 0 4px 6px -2px rgba(15, 23, 42, 0.02);
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 4px 12px -2px rgba(9, 9, 11, 0.03), 0 2px 6px -1px rgba(9, 9, 11, 0.01);
+  --shadow-lg: 0 12px 24px -4px rgba(9, 9, 11, 0.04), 0 4px 12px -2px rgba(9, 9, 11, 0.02);
   
   /* Miscellaneous */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-display: 'Outfit', var(--font-sans);
 }
 
 /* Dark Mode Tokens override */
 [data-theme="dark"] {
-  --primary: hsl(215, 20%, 95%);
-  --primary-light: hsl(222, 30%, 15%);
-  --accent: hsl(217, 65%, 58%);
-  --accent-hover: hsl(217, 60%, 50%);
+  --bg-outer: #1e2520;                /* Dark Sage/Forest */
+  --bg-app: #09090b;                  /* Zinc-950 */
+  --bg-card: #18181b;                 /* Zinc-900 */
+  --primary: #09090b;                 /* Keep sidebar black */
+  --primary-light: #27272a;           /* Zinc-800 */
+  --accent: #ffffff;                  /* White for primary elements */
+  --accent-hover: #e4e4e7;
+  --lime-accent: #e2fc5c;             /* Lime yellow stays vibrant */
+  --lime-accent-hover: #c4de32;
   
-  --bg-app: hsl(222, 35%, 6%);
-  --bg-card: hsl(222, 35%, 10%);
+  --border: #27272a;                  /* Zinc-800 */
+  --border-focus: #52525b;
   
-  --border: hsl(222, 30%, 14%);
-  --border-focus: hsl(217, 65%, 35%);
+  --text-main: #f4f4f5;               /* Zinc-100 */
+  --text-muted: #a1a1aa;              /* Zinc-400 */
+  --text-light: #71717a;              /* Zinc-600 */
   
-  --text-main: hsl(210, 20%, 98%);
-  --text-muted: hsl(215, 12%, 72%);
-  --text-light: hsl(215, 14%, 56%);
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --info-bg: rgba(6, 182, 212, 0.1);
   
-  --success-bg: rgba(5, 150, 105, 0.1);
-  --warning-bg: rgba(217, 119, 6, 0.1);
-  --danger-bg: rgba(220, 38, 38, 0.1);
-  --info-bg: rgba(8, 145, 178, 0.1);
-  
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -78,7 +83,7 @@
 }
 
 body {
-  background-color: var(--bg-app);
+  background-color: var(--bg-outer);
   color: var(--text-main);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -95,16 +100,18 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 a {
-  color: var(--accent);
-  text-decoration: none;
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-weight: 500;
   transition: var(--transition);
 }
 
 a:hover {
-  color: var(--accent-hover);
+  opacity: 0.8;
 }
 
-/* Base Buttons */
+/* Base Buttons - Pill-shaped and elegant */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -112,9 +119,9 @@ a:hover {
   gap: 8px;
   font-family: var(--font-sans);
   font-size: 0.875rem;
-  font-weight: 500;
-  padding: 10px 18px;
-  border-radius: var(--radius-sm);
+  font-weight: 600;
+  padding: 10px 22px;
+  border-radius: 9999px;              /* Fully rounded pills */
   border: 1px solid transparent;
   cursor: pointer;
   transition: var(--transition);
@@ -123,7 +130,7 @@ a:hover {
 
 .btn-primary {
   background-color: var(--accent);
-  color: white;
+  color: var(--bg-card);
 }
 
 .btn-primary:hover {
@@ -143,6 +150,7 @@ a:hover {
 
 .btn-secondary:hover {
   background-color: var(--primary-light);
+  border-color: var(--text-light);
 }
 
 .btn-danger {
@@ -163,23 +171,24 @@ a:hover {
 .btn-outline:hover {
   color: var(--text-main);
   border-color: var(--text-muted);
+  background-color: var(--primary-light);
 }
 
 .btn-sm {
-  padding: 6px 12px;
+  padding: 6px 14px;
   font-size: 0.75rem;
 }
 
 .btn-lg {
-  padding: 14px 24px;
+  padding: 14px 28px;
   font-size: 1rem;
 }
 
-/* Card Panel Container */
+/* Card Panel Container - Rounded 24px */
 .card {
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);    /* 24px rounded corners */
   padding: 24px;
   box-shadow: var(--shadow-sm);
   transition: var(--transition);
@@ -187,6 +196,28 @@ a:hover {
 
 .card:hover {
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Accent/Highlight Cards - inspired by screenshot yellow/lime cards */
+.card-highlight {
+  background-color: var(--lime-accent) !important;
+  color: #09090b !important;
+  border: 1px solid #d1ed34 !important;
+}
+
+.card-highlight h2, .card-highlight h3, .card-highlight p, .card-highlight span, .card-highlight div {
+  color: #09090b !important;
+}
+
+.card-dark {
+  background-color: #09090b !important;
+  color: #ffffff !important;
+  border: 1px solid #27272a !important;
+}
+
+.card-dark h2, .card-dark h3, .card-dark p, .card-dark span, .card-dark div {
+  color: #ffffff !important;
 }
 
 /* Input Fields & Forms */
@@ -204,20 +235,20 @@ a:hover {
 
 .form-input, .form-select, .form-textarea {
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 16px;
   font-family: var(--font-sans);
   font-size: 0.875rem;
   color: var(--text-main);
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   transition: var(--transition);
   outline: none;
 }
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  border-color: var(--text-main);
+  box-shadow: 0 0 0 3px rgba(9, 9, 11, 0.05);
 }
 
 .form-textarea {
@@ -251,69 +282,90 @@ a:hover {
 .badge-danger { background-color: var(--danger-bg); color: var(--danger); }
 .badge-info { background-color: var(--info-bg); color: var(--info); }
 
-/* Global Layout Grid */
+/* Global Layout Grid - Full screen dashboard */
 .layout-container {
   display: flex;
-  min-height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-app);
+  overflow: hidden;
+  margin: 0;
+  border: none;
+  transition: var(--transition);
 }
 
 .sidebar {
-  width: 260px;
-  background-color: var(--primary);
+  width: 250px;
+  background-color: var(--primary);  /* Deep zinc-950/black */
   color: white;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
   flex-shrink: 0;
+  padding: 24px 16px;
   transition: width 0.3s;
 }
 
 .sidebar-brand {
-  padding: 24px;
+  padding: 8px 12px 20px;
   font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-menu {
   list-style: none;
-  padding: 16px 8px;
+  padding: 16px 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .sidebar-item {
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .sidebar-link {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.875rem;
-  font-weight: 500;
-  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  color: #a1a1aa; /* Zinc-400 */
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 9999px;              /* Fully rounded pill */
   transition: var(--transition);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
-.sidebar-link:hover, .sidebar-link.active {
-  color: white;
-  background-color: rgba(255, 255, 255, 0.08);
+.sidebar-link:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .sidebar-link.active {
-  border-left: 3px solid var(--accent);
+  color: #09090b !important;                     /* Dark text inside lime button */
+  background-color: var(--lime-accent) !important;
+  box-shadow: 0 4px 12px -2px rgba(226, 252, 92, 0.3) !important;
+}
+
+.sidebar-link.active svg {
+  color: #09090b !important;
 }
 
 .sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .main-content {
@@ -321,26 +373,27 @@ a:hover {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  height: 100vh;
+  height: 100%;
 }
 
 .header {
-  height: 70px;
+  height: 64px;
   background-color: var(--bg-card);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
+  padding: 0 24px;
   flex-shrink: 0;
 }
 
 .page-container {
   flex: 1;
-  padding: 32px;
+  padding: 24px;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
+  overflow-y: auto;
 }
 
 /* Landing Page Grid & Typography */
@@ -774,14 +827,24 @@ a:hover {
 }
 
 @media (max-width: 768px) {
+  body {
+    padding: 0;
+  }
   .layout-container {
+    width: 100%;
+    height: 100vh;
+    border-radius: 0;
+    margin: 0;
+    border: none;
     flex-direction: column;
   }
   .sidebar {
     width: 100%;
     height: auto;
     border-right: none;
+    border-radius: 0;
     border-bottom: 1px solid var(--border);
+    padding: 16px;
   }
   .main-content {
     height: auto;
@@ -796,3 +859,208 @@ a:hover {
     font-size: 2.25rem;
   }
 }
+
+
+
+/* Premium neon-lime and gold/bronze gradient universe for landing page */
+.landing-universe {
+  --bg-outer: #050402;
+  --bg-app: #0a0805;
+  --bg-card: rgba(20, 16, 12, 0.65);
+  --border: rgba(210, 255, 61, 0.15);
+  --border-focus: rgba(210, 255, 61, 0.6);
+  --accent: #d2ff3d;                  /* Vibrant Neon-Lime Yellow */
+  --accent-hover: #e2fc5c;
+  --primary-light: rgba(210, 255, 61, 0.06);
+  
+  --text-main: #fcfcf9;
+  --text-muted: #a69f95;
+  --text-light: #7e776e;
+  
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 10px 25px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 20px rgba(210, 255, 61, 0.2);
+  --shadow-glow-lg: 0 0 35px rgba(210, 255, 61, 0.35);
+
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 30%, rgba(210, 255, 61, 0.04) 0%, transparent 45%),
+              radial-gradient(circle at 80% 70%, rgba(218, 165, 32, 0.06) 0%, transparent 55%),
+              linear-gradient(135deg, #0d0a06 0%, #030201 100%);
+  color: #fcfcf9;
+  position: relative;
+  overflow-x: hidden;
+  font-family: var(--font-sans);
+}
+
+/* Scoped Landing Header */
+.landing-universe .landing-header {
+  background: rgba(10, 8, 5, 0.7) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(210, 255, 61, 0.12) !important;
+}
+
+/* Scoped Glassmorphic Cards with Preserved hover transitions */
+.landing-universe .card {
+  background: rgba(22, 18, 14, 0.65) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(210, 255, 61, 0.12) !important;
+  color: #fcfcf9 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.05) !important;
+  transition: transform 0.4s cubic-bezier(0.2, 1, 0.2, 1), border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+.landing-universe .card:hover {
+  transform: translateY(-6px) translateZ(10px) !important;
+  border-color: rgba(210, 255, 61, 0.5) !important;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(210, 255, 61, 0.2) !important;
+}
+
+/* Scoped Interactive Metric Cards */
+.landing-universe .metric-card {
+  background: rgba(14, 11, 8, 0.6) !important;
+  border: 1px solid rgba(210, 255, 61, 0.08) !important;
+}
+
+.landing-universe .metric-card:hover {
+  border-color: rgba(210, 255, 61, 0.4) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(210, 255, 61, 0.1) !important;
+}
+
+/* Scoped Typography */
+.landing-universe h1,
+.landing-universe h2,
+.landing-universe h3,
+.landing-universe h4,
+.landing-universe h5,
+.landing-universe h6 {
+  color: #ffffff !important;
+}
+
+.landing-universe .hero-title {
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.landing-universe .hero-subtitle,
+.landing-universe p {
+  color: #b3ac9f !important;
+}
+
+/* Glow Text Utility */
+.landing-universe .text-glow {
+  color: var(--accent) !important;
+  text-shadow: 0 0 15px rgba(210, 255, 61, 0.45);
+}
+
+/* Neon Glow Buttons inside landing page */
+.landing-universe .btn-primary {
+  background-color: var(--accent) !important;
+  color: #050402 !important;
+  box-shadow: 0 4px 14px rgba(210, 255, 61, 0.3) !important;
+  border: 1px solid var(--accent) !important;
+  font-weight: 700;
+}
+
+.landing-universe .btn-primary:hover {
+  background-color: #ffffff !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.4) !important;
+  transform: translateY(-2px);
+}
+
+.landing-universe .btn-outline {
+  background-color: transparent !important;
+  color: #fcfcf9 !important;
+  border: 1px solid rgba(210, 255, 61, 0.35) !important;
+  font-weight: 600;
+}
+
+.landing-universe .btn-outline:hover {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 12px rgba(210, 255, 61, 0.25) !important;
+  background-color: rgba(210, 255, 61, 0.05) !important;
+  color: var(--accent) !important;
+  transform: translateY(-1px);
+}
+
+.landing-universe .btn-secondary {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.landing-universe .btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Scoped Pricing Details */
+.landing-universe .pricing-card.popular {
+  border: 2px solid var(--accent) !important;
+  background: rgba(22, 18, 14, 0.8) !important;
+  box-shadow: 0 15px 35px rgba(210, 255, 61, 0.12), 0 0 25px rgba(210, 255, 61, 0.08) !important;
+}
+
+.landing-universe .pricing-popular-badge {
+  background-color: var(--accent) !important;
+  color: #050402 !important; /* Crisp high-contrast black text */
+  font-weight: 800 !important;
+}
+
+.landing-universe .pricing-price {
+  color: #ffffff !important;
+}
+
+.landing-universe .pricing-price span {
+  color: #8e877c !important;
+}
+
+.landing-universe .pricing-features li {
+  color: #d1cbc0 !important;
+}
+
+/* 3D Tilt support setup */
+.tilt-card-wrapper {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+/* Custom Specular Highlight Glow Overlay */
+.specular-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(210, 255, 61, 0.08) 0%, transparent 60%);
+  border-radius: inherit;
+  z-index: 10;
+}
+
+/* Dynamic role-based input focus in landing modals */
+.modal-content .form-input:focus,
+.modal-content .form-select:focus {
+  border-color: var(--role-accent) !important;
+  box-shadow: 0 0 0 3px rgba(var(--role-accent-rgb), 0.2) !important;
+  outline: none;
+}
+
+.btn-role-submit {
+  background-color: var(--role-accent) !important;
+  border-color: var(--role-accent) !important;
+  color: white !important;
+  transition: var(--transition);
+}
+
+.btn-role-submit:hover,
+.btn-role-submit:focus {
+  background-color: rgba(var(--role-accent-rgb), 0.9) !important;
+  box-shadow: 0 4px 14px rgba(var(--role-accent-rgb), 0.4) !important;
+}
+

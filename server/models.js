@@ -198,6 +198,9 @@ const UserSchema = new mongoose.Schema({
     type: String,
     enum: ['Pending', 'Paid', 'Failed']
   },
+  phone: {
+    type: String
+  },
   linkedStudents: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -272,7 +275,14 @@ const MockTestSchema = new mongoose.Schema({
   questions: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Question'
-  }]
+  }],
+  scheduledTime: {
+    type: String
+  },
+  isPublished: {
+    type: Boolean,
+    default: true
+  }
 }, { timestamps: true });
 
 export const MockTest = mongoose.model('MockTest', MockTestSchema);

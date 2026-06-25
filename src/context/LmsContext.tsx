@@ -16,6 +16,19 @@ import {
   mockUsers
 } from '../data/mockData';
 
+export interface DashboardStats {
+  streaks: number;
+  hoursStudied: number;
+  completedTasks: number;
+  dailyGoalProgress: number;
+  avgAccuracy: number;
+  totalTests: number;
+  weakTopicsCount: number;
+  tasks: { _id: string; text: string; completed: boolean }[];
+  savedNotesCount: number;
+  siteRank: number;
+}
+
 interface LmsContextType {
   activeUser: UserProfile | null;
   questions: Question[];
@@ -26,7 +39,7 @@ interface LmsContextType {
   notes: UserNote[];
   login: (user: UserProfile, token: string) => void;
   logout: () => void;
-  addQuestion: (q: Omit<Question, 'id'>) => void;
+  addQuestion: (q: Omit<Question, 'id'> & { id?: string }) => void;
   addStudyMaterial: (sm: Omit<StudyMaterial, 'id'>) => void;
   deleteStudyMaterial: (id: string) => void;
   addNote: (note: Omit<UserNote, 'id' | 'lastUpdated'>) => void;
@@ -43,6 +56,13 @@ interface LmsContextType {
   upgradeUserPlan: (plan: 'Pro' | 'Premium', targetCourse: 'PCB' | 'PCM' | 'PCMB', targetExam: 'JEE' | 'NEET' | 'MHT-CET') => Promise<void>;
   isMockTestActive: boolean;
   setIsMockTestActive: (active: boolean) => void;
+  fetchEvents: () => Promise<void>;
+  fetchAttempts: () => Promise<void>;
+  stats: DashboardStats;
+  fetchStats: () => Promise<void>;
+  setStats: React.Dispatch<React.SetStateAction<DashboardStats>>;
+  leaderboard: any[];
+  fetchLeaderboard: () => Promise<void>;
 }
 
 const LmsContext = createContext<LmsContextType | undefined>(undefined);
@@ -166,6 +186,11 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttempts([]);
     setNotes([]);
     setEvents(initialEvents);
+    if (user.role === 'student') {
+      setTimeout(() => {
+        fetchAttempts();
+      }, 50);
+    }
   };
 
   const logout = () => {
@@ -176,10 +201,10 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEvents(initialEvents);
   };
 
-  const addQuestion = (q: Omit<Question, 'id'>) => {
+  const addQuestion = (q: Omit<Question, 'id'> & { id?: string }) => {
     const newQ: Question = {
       ...q,
-      id: 'q_' + Math.random().toString(36).substr(2, 9)
+      id: q.id || 'q_' + Math.random().toString(36).substr(2, 9)
     };
     setQuestions(prev => {
       const updated = [...prev, newQ];
@@ -407,6 +432,181 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/events');
+      if (response.ok) {
+        const data = await response.json();
+        const mapped = data.map((e: any) => ({
+          id: e._id || e.id,
+          title: e.title,
+          date: e.date,
+          type: e.type,
+          subject: e.subject
+        }));
+        setEvents(mapped);
+      }
+    } catch (err) {
+      console.error('Error fetching calendar events:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeUser) {
+      fetchEvents();
+      if (activeUser.role === 'student') {
+        fetchAttempts();
+      }
+    }
+  }, [activeUser]);
+
+  const fetchAttempts = async () => {
+    const token = localStorage.getItem('mht_cet_token');
+    if (!token) return;
+    try {
+      const response = await fetch('http://localhost:5000/api/student/test-attempts', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const optionMap: { [key: string]: number } = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+        const mapped: TestAttempt[] = data.map((attempt: any) => {
+          const answers: TestAttempt['answers'] = {};
+          (attempt.responses || []).forEach((r: any) => {
+            if (r.questionId) {
+              const qId = r.questionId.toString();
+              answers[qId] = {
+                selected: r.selectedOption ? optionMap[r.selectedOption] : -1,
+                isCorrect: r.isCorrect,
+                timeTaken: r.timeSpent || 0
+              };
+            }
+          });
+
+          const aiSuggestions = attempt.feedback?.aiSuggestions && attempt.feedback.aiSuggestions.length > 0 
+            ? attempt.feedback.aiSuggestions 
+            : (attempt.ai_analysis 
+                ? [
+                    `⏱️ Time management rating: ${attempt.ai_analysis.time_management_rating || 'N/A'}`,
+                    `🎯 Conceptual weaknesses flagged: ${(attempt.ai_analysis.weak_topics || []).join(', ') || 'None'}`,
+                    `📚 Student Action Plan: ${attempt.ai_analysis.student_feedback || 'Practice regularly.'}`,
+                    `👪 Parent report summary: ${attempt.ai_analysis.parent_feedback || 'No issues flagged.'}`,
+                    `📝 Recommended Action 1: Solve 10 target practice questions on the weak chapters.`,
+                    `⚡ Recommended Action 2: Maintain a formula sheet for rotational dynamics equations.`
+                  ]
+                : ['Review weak topics.']
+              );
+
+          return {
+            id: attempt._id,
+            testId: attempt.testId || '',
+            testName: attempt.test_name,
+            date: attempt.createdAt ? attempt.createdAt.split('T')[0] : (attempt.date || new Date().toISOString().split('T')[0]),
+            score: attempt.score,
+            maxScore: attempt.max_score,
+            timeSpent: attempt.time_spent_seconds || 0,
+            accuracy: attempt.accuracy,
+            answers,
+            feedback: {
+              instructorName: attempt.feedback?.instructorName || 'AI Diagnostic Engine',
+              text: attempt.feedback?.text || attempt.ai_analysis?.student_feedback || '',
+              date: attempt.feedback?.date || (attempt.createdAt ? attempt.createdAt.split('T')[0] : ''),
+              aiSuggestions: aiSuggestions
+            }
+          };
+        });
+        setAttempts(mapped);
+      }
+    } catch (err) {
+      console.error('Error fetching student attempts:', err);
+    }
+  };
+
+  const [stats, setStats] = useState<DashboardStats>({
+    streaks: 0,
+    hoursStudied: 0,
+    completedTasks: 0,
+    dailyGoalProgress: 0,
+    avgAccuracy: 0,
+    totalTests: 0,
+    weakTopicsCount: 0,
+    tasks: [],
+    savedNotesCount: 0,
+    siteRank: 4
+  });
+
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+
+  const fetchStats = async () => {
+    const token = localStorage.getItem('mht_cet_token');
+    if (!token) return;
+    try {
+      const response = await fetch('http://localhost:5000/api/user/dashboard-stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard stats:', err);
+    }
+  };
+
+  const fetchLeaderboard = async () => {
+    const token = localStorage.getItem('mht_cet_token');
+    if (!token) return;
+    try {
+      const response = await fetch('http://localhost:5000/api/user/leaderboard', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setLeaderboard(data);
+      }
+    } catch (err) {
+      console.error('Error fetching leaderboard:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeUser && activeUser.role === 'student') {
+      fetchStats();
+      fetchLeaderboard();
+    }
+  }, [activeUser, attempts.length]);
+
+  // Keep-alive study time ping for all students
+  useEffect(() => {
+    if (!activeUser || activeUser.role !== 'student') return;
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem('mht_cet_token');
+      if (!token) return;
+      try {
+        const response = await fetch('http://localhost:5000/api/user/study-time', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ timeSpentSeconds: 30 })
+        });
+        if (response.ok) {
+          fetchStats();
+        }
+      } catch (err) {
+        console.error('Error updating study hours:', err);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [activeUser]);
+
   const addCalendarEvent = (e: Omit<CalendarEvent, 'id'>) => {
     const newEvent: CalendarEvent = {
       ...e,
@@ -443,7 +643,14 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setRunTour,
         upgradeUserPlan,
         isMockTestActive,
-        setIsMockTestActive
+        setIsMockTestActive,
+        fetchEvents,
+        fetchAttempts,
+        stats,
+        fetchStats,
+        setStats,
+        leaderboard,
+        fetchLeaderboard
       }}
     >
       {children}

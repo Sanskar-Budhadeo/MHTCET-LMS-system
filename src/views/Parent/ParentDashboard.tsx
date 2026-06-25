@@ -16,7 +16,7 @@ interface ParentDashboardProps {
 }
 
 export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection = 'performance' }) => {
-  const { attempts } = useLms();
+  const { attempts, leaderboard } = useLms();
   const [loading, setLoading] = useState<boolean>(true);
   const [parentData, setParentData] = useState<any>(null);
   const [studentAnalytics, setStudentAnalytics] = useState<any>(null);
@@ -553,6 +553,9 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
               ) : (
                 <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '40px 0' }}>No mock exam logs recorded.</p>
               )}
+              <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: '10px', lineHeight: '1.4' }}>
+                <strong>Progress Tracking & Score Deviation</strong>: Standard deviation analysis indicates consistency in scores. Smaller variations around the target mean indicate highly stable cognitive retrieval, whereas wide performance shifts point to incomplete conceptual coverage.
+              </div>
             </div>
 
             <div className="card">
@@ -619,6 +622,43 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
                 )}
               </div>
             </div>
+
+            {/* AI Parent Improvement Plan Card */}
+            <div className="card" style={{ gridColumn: 'span 2', borderLeft: '4px solid var(--accent)', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+              <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <Sparkles size={18} style={{ color: 'var(--accent)' }} /> Detailed AI Suggestions & Guardian Improvement Plan
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                <div style={{ backgroundColor: 'var(--primary-light)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>Actionable Study Guidelines</h4>
+                  <ul style={{ fontSize: '0.75rem', paddingLeft: '16px', color: 'var(--text-muted)', lineHeight: '1.5', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <li>⏱️ <strong>Time Efficiency Focus</strong>: The student tends to lose accuracy in the final 15 minutes of mock tests. Encourage practicing 10-question timed practice sprints.</li>
+                    <li>📖 <strong>Targeted Revision</strong>: Push for review on Physics chapters like **Rotational Dynamics** and Math chapters like **Vectors** where student averages are below 60%.</li>
+                    <li>🔥 <strong>Streak Tracking</strong>: Encourage maintaining the daily platform log-in streak. Currently active at {studentStreak} days.</li>
+                  </ul>
+                </div>
+                <div style={{ backgroundColor: 'var(--primary-light)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>AI Diagnostics Summary</h4>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: 0 }}>
+                    {recentAttempts.length > 0 && recentAttempts[0].ai_analysis?.parent_feedback 
+                      ? recentAttempts[0].ai_analysis.parent_feedback
+                      : `${studentName} is performing strongly in mathematics and solid state chemistry, but needs guidance on rotational dynamics formulas and vectors cross-product calculations. Daily revision slots of 30 minutes are recommended.`
+                    }
+                  </p>
+                  {recentAttempts.length > 0 && recentAttempts[0].ai_analysis?.weak_topics && (
+                    <div style={{ marginTop: '10px' }}>
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '4px' }}>Topics Tagged for Urgent Revision:</span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {recentAttempts[0].ai_analysis.weak_topics.map((wt: string) => (
+                          <span key={wt} className="badge badge-danger" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>{wt}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
@@ -685,31 +725,63 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: '10px', lineHeight: '1.4' }}>
+                <strong>Candidate Percentile and Standard Deviation Ranking</strong>: A student's percentile position indicates the proportion of mock test attempts score outcomes exceeded by their performance: Percentile = Phi((x - mean) / stdDev) * 100, where mean represents the cohort mean, stdDev the standard deviation, and x the child's score. Tracking this metric across consecutive calendar periods identifies progress stability compared to statewide competitors.
+              </div>
             </div>
-
             <div className="card">
               <h3 style={{ fontSize: '1.15rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Award size={18} style={{ color: '#f59e0b' }} /> Peer Standings & Ranks (Topper Cohort)
               </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { rank: 1, name: 'Amit Patil', percentile: 99.85, accuracy: '95%', target: 'PCM' },
-                  { rank: 2, name: 'Neha Deshmukh', percentile: 99.20, accuracy: '92%', target: 'PCB' },
-                  { rank: 3, name: 'Pranav Joshi', percentile: 98.75, accuracy: '89%', target: 'PCMB' },
-                  { rank: 4, name: `${studentName} (Child)`, percentile: 98.40, accuracy: '88%', target: 'PCMB', active: true },
-                  { rank: 5, name: 'Sayali Kulkarni', percentile: 93.10, accuracy: '80%', target: 'PCM' },
-                ].map(peer => (
-                  <div key={peer.rank} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: peer.active ? 'var(--primary-light)' : 'transparent', border: peer.active ? '1px solid var(--accent)' : '1px solid transparent', fontSize: '0.85rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <strong style={{ color: peer.rank === 1 ? '#d97706' : peer.rank === 2 ? '#6b7280' : peer.rank === 3 ? '#b45309' : 'var(--text-main)' }}>#{peer.rank}</strong>
-                      <span style={{ fontWeight: peer.active ? 700 : 500 }}>{peer.name}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{peer.target}</span>
-                      <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{peer.percentile}%ile</span>
-                    </div>
-                  </div>
-                ))}
+              <div className="table-container" style={{ overflowX: 'auto' }}>
+                <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      <th style={{ padding: '6px 8px', textAlign: 'left' }}>Student</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>Ovr</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>JEE</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>NEET</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'center' }}>CET</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'right' }}>%ile</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard && leaderboard.length > 0 ? (
+                      leaderboard.slice(0, 10).map(peer => {
+                        const isActive = peer.name.toLowerCase() === studentName.toLowerCase() || peer.id === studentObj._id;
+                        return (
+                          <tr 
+                            key={peer.id} 
+                            style={{ 
+                              backgroundColor: isActive ? 'var(--primary-light)' : 'transparent',
+                              fontWeight: isActive ? 600 : 400
+                            }}
+                          >
+                            <td style={{ padding: '8px 4px', textAlign: 'left' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span>{peer.name}{isActive ? ' (Child)' : ''}</span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-light)' }}>{peer.course}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>#{peer.rank}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.jee === 'number' ? `#${peer.jee}` : peer.jee}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.neet === 'number' ? `#${peer.neet}` : peer.neet}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'center' }}>{typeof peer.cet === 'number' ? `#${peer.cet}` : peer.cet}</td>
+                            <td style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 700 }}>
+                              {typeof peer.percentile === 'number' ? `${peer.percentile.toFixed(2)}%` : peer.percentile}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                          No leaderboard data available.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const LearningView: React.FC = () => {
-  const { activeUser, notes, addNote, updateNote, deleteNote, upgradeUserPlan } = useLms();
+  const { activeUser, notes, addNote, updateNote, deleteNote, upgradeUserPlan, attempts, questions, stats } = useLms();
 
   // Upgrade state
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -33,6 +33,55 @@ export const LearningView: React.FC = () => {
   const [upiId, setUpiId] = useState('student@okaxis');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+
+  const isFree = activeUser?.plan === 'Free' || activeUser?.subscriptionTier === 'Free';
+
+  // Calculate dynamic syllabus progress percentage based on reading, tests, and quiz learning
+  const getDynamicSyllabusProgress = () => {
+    const subjects = ['Physics', 'Chemistry', 'Mathematics', 'Biology'];
+    let totalProgressSum = 0;
+    
+    subjects.forEach(subjectName => {
+      // 1. Tests taken count
+      const subjectAttempts = attempts.filter(att => 
+        att.testName?.toLowerCase().includes(subjectName.toLowerCase()) || 
+        (att.answers && Object.keys(att.answers).some(qId => questions.find(q => q.id === qId)?.subject === subjectName))
+      );
+      const testsCount = subjectAttempts.length;
+
+      // 2. Reading factor: Notes created for this subject
+      const subjectNotesCount = notes.filter(n => n.subject === subjectName).length;
+
+      // 3. Accuracy factor: average accuracy on this subject
+      let totalScoreAcc = 0;
+      subjectAttempts.forEach(att => { totalScoreAcc += att.accuracy; });
+      const avgAcc = testsCount > 0 ? (totalScoreAcc / testsCount) : 0;
+
+      // 4. Time spent factor: fraction of total hours studied allocated to this subject
+      const subjectTimeAllocated = stats.hoursStudied * (subjectNotesCount + testsCount + 1) / (notes.length + attempts.length + 4);
+
+      // Weighted progress percentage
+      let prog = 0;
+      if (testsCount === 0) {
+        const notesWeight = Math.min((subjectNotesCount / 5) * 100, 100) * 0.5;
+        const timeWeight = Math.min((subjectTimeAllocated / 10) * 100, 100) * 0.5;
+        prog = Math.round(notesWeight + timeWeight);
+      } else {
+        const accWeight = avgAcc * 0.4;
+        const testWeight = Math.min((testsCount / 5) * 100, 100) * 0.3;
+        const notesWeight = Math.min((subjectNotesCount / 5) * 100, 100) * 0.2;
+        const timeWeight = Math.min((subjectTimeAllocated / 10) * 100, 100) * 0.1;
+        prog = Math.round(accWeight + testWeight + notesWeight + timeWeight);
+      }
+      
+      totalProgressSum += prog;
+    });
+
+    const calculatedProgress = Math.round(totalProgressSum / subjects.length) || 0;
+    return Math.min(calculatedProgress, 100);
+  };
+
+  const dynamicProgress = getDynamicSyllabusProgress();
 
   const handleSimulatedUpgrade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,8 +341,6 @@ export const LearningView: React.FC = () => {
       );
     });
   };
-
-  const isFree = activeUser?.plan === 'Free' || activeUser?.subscriptionTier === 'Free';
 
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '85vh' }}>
@@ -682,7 +729,7 @@ export const LearningView: React.FC = () => {
                 </div>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Daily Study Hours</span>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>4.2 Hours completed today</h4>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>{stats.hoursStudied.toFixed(2)} Hours completed</h4>
                 </div>
               </div>
 
@@ -694,8 +741,9 @@ export const LearningView: React.FC = () => {
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Syllabus Coverage Progress</span>
                   <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border)', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-                    <div style={{ width: '64%', height: '100%', backgroundColor: '#10b981', borderRadius: '4px' }} />
+                    <div style={{ width: `${dynamicProgress}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '4px' }} />
                   </div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>{dynamicProgress}% Coverage</span>
                 </div>
               </div>
 
@@ -706,7 +754,7 @@ export const LearningView: React.FC = () => {
                 </div>
                 <div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>AI-Predicted National Rank</span>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Rank #425 (based on Mock history)</h4>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Rank #{stats.siteRank || 4} (based on site history)</h4>
                 </div>
               </div>
             </div>
