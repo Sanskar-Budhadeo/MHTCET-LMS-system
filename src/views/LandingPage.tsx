@@ -350,6 +350,47 @@ export const LandingPage: React.FC = () => {
     setLoading(true);
     setErrorMsg('');
 
+    // Demo/offline credentials mapping
+    const DEMO_PASSWORDS: Record<string, string> = {
+      'rahul@cet.com': 'password123',
+      'parent.rahul@cet.com': 'password123',
+      'teacher@demo.com': 'password123',
+      'executive@demo.com': 'password123',
+      'sharma.sir@cet.com': 'password123',
+      'student@demo.com': 'password123',
+    };
+
+    const DEMO_USERS: Record<string, any> = {
+      'rahul@cet.com': {
+        id: 'u_student', name: 'Rahul Sharma', email: 'rahul@cet.com',
+        role: 'student', streak: 12, plan: 'Pro', targetCourse: 'PCM', targetExam: 'MHT-CET',
+        weakTopics: ['Rotational Dynamics', 'Chemical Kinetics'],
+        strongTopics: ['Oscillations', 'Solid State'],
+        loginDates: ['2026-06-18', '2026-06-17', '2026-06-16']
+      },
+      'student@demo.com': {
+        id: 'u_student_demo', name: 'Demo Student', email: 'student@demo.com',
+        role: 'student', streak: 5, plan: 'Free', targetCourse: 'PCM', targetExam: 'MHT-CET',
+        weakTopics: ['Vectors'], strongTopics: ['Trigonometry'], loginDates: []
+      },
+      'parent.rahul@cet.com': {
+        id: 'u_parent', name: 'Mr. Arvind Sharma', email: 'parent.rahul@cet.com',
+        role: 'parent', studentId: 'u_student'
+      },
+      'teacher@demo.com': {
+        id: 'u_teacher', name: 'Prof. Mehta', email: 'teacher@demo.com',
+        role: 'teacher', subject: 'Physics'
+      },
+      'executive@demo.com': {
+        id: 'u_executive', name: 'CEO Demo', email: 'executive@demo.com',
+        role: 'executive'
+      },
+      'sharma.sir@cet.com': {
+        id: 'u_admin', name: 'Prof. Sharma (Admin)', email: 'sharma.sir@cet.com',
+        role: 'admin'
+      },
+    };
+
     try {
       const endpoint = isSignUp 
         ? 'http://localhost:5000/api/auth/register' 
@@ -395,8 +436,49 @@ export const LandingPage: React.FC = () => {
       setShowLoginModal(false);
       setShowPaymentModal(false);
     } catch (err: any) {
-      console.error('Auth error:', err);
-      setErrorMsg(err.message || 'Server connection failed.');
+      // If backend is offline (network error), fall back to offline demo mode
+      const isNetworkError = err instanceof TypeError || err.message?.toLowerCase().includes('failed to fetch') || err.message?.toLowerCase().includes('network');
+
+      if (isNetworkError) {
+        // Offline / demo mode fallback
+        const normalizedEmail = email.trim().toLowerCase();
+        const expectedPassword = DEMO_PASSWORDS[normalizedEmail];
+
+        if (isSignUp) {
+          // For sign-up in offline mode: create a mock new user
+          const newUser = {
+            id: 'u_new_' + Date.now(),
+            name: name.trim() || 'New User',
+            email: normalizedEmail,
+            role: selectedRole,
+            streak: 0,
+            plan: selectedRole === 'student' ? plan : undefined,
+            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
+            targetExam: selectedRole === 'student' ? targetExam : undefined,
+            loginDates: [],
+          };
+          login(newUser as any, 'offline-demo-token');
+          setShowLoginModal(false);
+          setShowPaymentModal(false);
+        } else if (expectedPassword && password === expectedPassword) {
+          // Valid demo credentials — log in offline
+          const offlineUser = DEMO_USERS[normalizedEmail];
+          if (offlineUser) {
+            login(offlineUser, 'offline-demo-token');
+            setShowLoginModal(false);
+            setShowPaymentModal(false);
+          } else {
+            setErrorMsg('Demo account not found. Please use a valid demo email.');
+          }
+        } else if (expectedPassword && password !== expectedPassword) {
+          setErrorMsg('Incorrect password. Demo accounts use: password123');
+        } else {
+          setErrorMsg('Unknown email. Use a demo account or start the backend server.');
+        }
+      } else {
+        console.error('Auth error:', err);
+        setErrorMsg(err.message || 'Authentication failed. Please try again.');
+      }
     } finally {
       setLoading(false);
       setPaymentProcessing(false);

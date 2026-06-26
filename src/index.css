@@ -789,16 +789,45 @@ a:hover {
 }
 
 .modal-content {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border);
+  background-color: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-lg);
   padding: 32px;
   width: 100%;
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04);
+  color: #f4f4f5;
 }
+
+.modal-content h3,
+.modal-content h4 {
+  color: #ffffff;
+}
+
+.modal-content .form-label {
+  color: #a1a1aa;
+}
+
+.modal-content .form-input,
+.modal-content .form-select {
+  background-color: #27272a;
+  color: #f4f4f5;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.modal-content .form-input::placeholder {
+  color: #52525b;
+}
+
+.modal-content .form-input:focus,
+.modal-content .form-select:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(226, 252, 92, 0.15);
+}
+
 
 /* Animations */
 @keyframes pulse {
