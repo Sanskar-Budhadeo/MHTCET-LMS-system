@@ -243,30 +243,68 @@ router.get('/api/analytics/parent/:studentId', authMiddleware, async (req, res, 
       }
     }
 
-    // Fetch user details: streak, weakTopics, loginDates, strongTopics, hoursStudied
-    const student = await User.findById(studentId).select('name email streak streaks weakTopics strongTopics loginDates hoursStudied');
+    // Fetch user details: streak, weakTopics, loginDates, strongTopics, hoursStudied, teacherReport
+    const student = await User.findById(studentId).select('name email streak streaks weakTopics strongTopics loginDates hoursStudied teacherReport');
     if (!student) {
       return res.status(404).json({ error: 'Student not found.' });
     }
 
-    // Fetch student's recent test attempts
-    const recentAttempts = await TestAttempt.aggregate([
-      { $match: { student_id: studentId } },
-      { $sort: { createdAt: -1 } },
-      { $limit: 10 },
-      {
-        $project: {
-          testName: '$test_name',
-          examType: 1,
-          score: 1,
-          maxScore: '$max_score',
-          accuracy: 1,
-          timeSpent: '$time_spent_seconds',
-          createdAt: 1,
-          ai_analysis: 1
-        }
+    // Query attempts to calculate avg accuracy and total tests
+    let avgAccuracy = 82; // standard default/fallback accuracy
+    let totalTests = 0;
+    if (mongoose.connection.readyState === 1) {
+      const allAttempts = await TestAttempt.find({ student_id: studentId });
+      totalTests = allAttempts.length;
+      if (totalTests > 0) {
+        avgAccuracy = Math.round(allAttempts.reduce((sum, att) => sum + att.accuracy, 0) / totalTests);
       }
-    ]);
+    }
+
+    // Fetch student's recent test attempts
+    const rawAttempts = await TestAttempt.find({ student_id: studentId })
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const recentAttempts = rawAttempts.map(att => {
+      // Determine subject from responses
+      let subject = 'General';
+      if (att.responses && att.responses.length > 0) {
+        const subjectCounts = {};
+        att.responses.forEach(r => {
+          if (r.subject) {
+            subjectCounts[r.subject] = (subjectCounts[r.subject] || 0) + 1;
+          }
+        });
+        const sorted = Object.entries(subjectCounts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length > 0) {
+          subject = sorted[0][0];
+        }
+      } else {
+        const nameUpper = att.test_name.toUpperCase();
+        if (nameUpper.includes('PHYSICS')) subject = 'Physics';
+        else if (nameUpper.includes('CHEMISTRY')) subject = 'Chemistry';
+        else if (nameUpper.includes('MATH')) subject = 'Mathematics';
+        else if (nameUpper.includes('BIOLOGY')) subject = 'Biology';
+      }
+
+      return {
+        id: att._id,
+        _id: att._id,
+        testName: att.test_name,
+        examType: att.examType,
+        score: att.score,
+        maxScore: att.max_score,
+        accuracy: att.accuracy,
+        timeSpent: att.time_spent_seconds,
+        createdAt: att.createdAt,
+        percentile: att.percentile,
+        nationalRank: att.nationalRank,
+        ai_analysis: att.ai_analysis,
+        feedback: att.feedback,
+        responses: att.responses || [],
+        subject
+      };
+    });
 
     res.json({
       student: {
@@ -277,7 +315,10 @@ router.get('/api/analytics/parent/:studentId', authMiddleware, async (req, res, 
         hoursStudied: student.hoursStudied || 0,
         weakTopics: student.weakTopics || [],
         strongTopics: student.strongTopics || [],
-        loginDates: student.loginDates || []
+        loginDates: student.loginDates || [],
+        teacherReport: student.teacherReport || '',
+        avgAccuracy,
+        totalTests
       },
       recentAttempts
     });

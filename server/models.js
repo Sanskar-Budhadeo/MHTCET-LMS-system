@@ -70,7 +70,7 @@ const TestAttemptSchema = new mongoose.Schema({
     required: true
   },
   responses: [{
-    questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+    questionId: { type: String },
     selectedOption: { type: String },
     isCorrect: { type: Boolean },
     timeSpent: { type: Number },
@@ -254,7 +254,11 @@ const UserSchema = new mongoose.Schema({
   tasks: [{
     text: { type: String, required: true },
     completed: { type: Boolean, default: false }
-  }]
+  }],
+  teacherReport: {
+    type: String,
+    default: ''
+  }
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

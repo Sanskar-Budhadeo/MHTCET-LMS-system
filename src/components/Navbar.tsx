@@ -53,6 +53,28 @@ export const Navbar: React.FC = () => {
 
         {activeUser ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {activeUser.role === 'parent' && (
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-report-card'));
+                }}
+                className="btn btn-primary btn-sm"
+                style={{ 
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)', 
+                  border: '1px solid #f59e0b', 
+                  color: '#d97706',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                📄 Report Card
+              </button>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
               <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{activeUser.name}</span>
               <span 

@@ -269,7 +269,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
             )}
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
-            Email: {activeUser?.email} {activeUser?.prn && `| PRN Number: ${activeUser.prn}`} {activeUser?.phone && `| Phone: ${activeUser.phone}`}
+            Email: {activeUser?.email} {activeUser?.phone && `| Phone: ${activeUser.phone}`}
           </p>
         </div>
 

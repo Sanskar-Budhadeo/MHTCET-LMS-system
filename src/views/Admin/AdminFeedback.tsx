@@ -24,6 +24,16 @@ export const AdminFeedback: React.FC<AdminFeedbackProps> = ({ selectedAttemptId,
     }
   }, [selectedAttemptId, attempts]);
 
+  // Sync activeAttempt with attempts array on updates
+  useEffect(() => {
+    if (activeAttempt) {
+      const match = attempts.find(a => a.id === activeAttempt.id);
+      if (match) {
+        setActiveAttempt(match);
+      }
+    }
+  }, [attempts]);
+
   const handleSelectAttempt = (att: TestAttempt) => {
     setActiveAttempt(att);
     setFeedbackText(att.feedback?.text || '');
@@ -43,40 +53,35 @@ export const AdminFeedback: React.FC<AdminFeedbackProps> = ({ selectedAttemptId,
       }
     });
 
+    const studentFirstName = activeAttempt.studentName ? activeAttempt.studentName.split(' ')[0] : 'Student';
     const isHighScorer = activeAttempt.accuracy >= 80;
     const isMediumScorer = activeAttempt.accuracy >= 60 && activeAttempt.accuracy < 80;
 
     let suggestion = '';
     if (isHighScorer) {
-      suggestion = `Excellent work on ${activeAttempt.testName}, Rahul! You achieved a solid score of ${activeAttempt.score}/${activeAttempt.maxScore}. Your understanding of these subjects is very clear. `;
+      suggestion = `Excellent work on ${activeAttempt.testName}, ${studentFirstName}! You achieved a solid score of ${activeAttempt.score}/${activeAttempt.maxScore}. Your understanding of these subjects is very clear. `;
       if (wrongTopics.length > 0) {
         suggestion += `Keep refining your grasp on ${wrongTopics.join(', ')} to push closer to the 100th percentile. Review the core equations for these chapters in the notes space.`;
       } else {
         suggestion += `You solved all questions perfectly. Try taking hard sectional mock tests next!`;
       }
     } else if (isMediumScorer) {
-      suggestion = `Good attempt on ${activeAttempt.testName}, Rahul. You scored ${activeAttempt.score}/${activeAttempt.maxScore}. While some topics are strong, we noted conceptual gaps in chapters: ${wrongTopics.slice(0, 3).join(', ')}. `;
+      suggestion = `Good attempt on ${activeAttempt.testName}, ${studentFirstName}. You scored ${activeAttempt.score}/${activeAttempt.maxScore}. While some topics are strong, we noted conceptual gaps in chapters: ${wrongTopics.slice(0, 3).join(', ')}. `;
       suggestion += `Try generating targeted AI adaptive quizzes for these chapters, and dedicate 30 minutes to review corresponding formula guide manuals.`;
     } else {
-      suggestion = `Fair effort, Rahul. You scored ${activeAttempt.score}/${activeAttempt.maxScore} (${activeAttempt.accuracy}% accuracy). It is recommended to perform a thorough revision of the syllabus notes. `;
+      suggestion = `Fair effort, ${studentFirstName}. You scored ${activeAttempt.score}/${activeAttempt.maxScore} (${activeAttempt.accuracy}% accuracy). It is recommended to perform a thorough revision of the syllabus notes. `;
       suggestion += `Direct attention towards ${wrongTopics.slice(0, 3).join(', ')}. Try solving easier questions in these chapters before moving onto hard mocks.`;
     }
 
     setFeedbackText(suggestion);
   };
 
-  const handleSubmitFeedback = (e: React.FormEvent) => {
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeAttempt || !feedbackText) return;
 
-    addFeedback(activeAttempt.id, feedbackText);
+    await addFeedback(activeAttempt.id, feedbackText);
     alert('Instructor feedback successfully published to Student & Parent Dashboards!');
-    
-    // Refresh local view
-    const updated = attempts.find(a => a.id === activeAttempt.id);
-    if (updated) {
-      setActiveAttempt(updated);
-    }
     
     if (clearSelectedAttemptId) clearSelectedAttemptId();
   };
@@ -94,7 +99,7 @@ export const AdminFeedback: React.FC<AdminFeedbackProps> = ({ selectedAttemptId,
           <button onClick={handleBack} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <ArrowLeft size={14} /> Back to List
           </button>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Student Name: Rahul Sharma</span>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Student Name: {activeAttempt.studentName || 'Student'}</span>
         </div>
 
         <div className="card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
@@ -222,7 +227,7 @@ export const AdminFeedback: React.FC<AdminFeedbackProps> = ({ selectedAttemptId,
                 const isManualReviewed = att.feedback && att.feedback.instructorName !== 'AI Engine';
                 return (
                   <tr key={att.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>Rahul Sharma</td>
+                    <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{att.studentName || 'Student'}</td>
                     <td>{att.testName}</td>
                     <td>{att.date}</td>
                     <td><span style={{ fontWeight: 700 }}>{att.score}</span>/{att.maxScore}</td>

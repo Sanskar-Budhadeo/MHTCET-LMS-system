@@ -46,7 +46,7 @@ interface LmsContextType {
   updateNote: (id: string, content: string, title?: string) => void;
   deleteNote: (id: string) => void;
   submitAttempt: (attempt: Omit<TestAttempt, 'id'>) => string;
-  addFeedback: (attemptId: string, feedbackText: string, aiSuggestions?: string[]) => void;
+  addFeedback: (attemptId: string, feedbackText: string, aiSuggestions?: string[]) => Promise<void> | void;
   weakTopics: string[];
   strongTopics: string[];
   generateAdaptiveQuiz: (subject: string, topic: string) => Question[];
@@ -58,6 +58,7 @@ interface LmsContextType {
   setIsMockTestActive: (active: boolean) => void;
   fetchEvents: () => Promise<void>;
   fetchAttempts: () => Promise<void>;
+  fetchQuestions: () => Promise<void>;
   stats: DashboardStats;
   fetchStats: () => Promise<void>;
   setStats: React.Dispatch<React.SetStateAction<DashboardStats>>;
@@ -186,7 +187,8 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttempts([]);
     setNotes([]);
     setEvents(initialEvents);
-    if (user.role === 'student') {
+    fetchQuestions();
+    if (user.role === 'student' || user.role === 'teacher' || user.role === 'admin') {
       setTimeout(() => {
         fetchAttempts();
       }, 50);
@@ -354,14 +356,15 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return attemptId;
   };
 
-  const addFeedback = (attemptId: string, feedbackText: string, aiSuggestions?: string[]) => {
+  const addFeedback = async (attemptId: string, feedbackText: string, aiSuggestions?: string[]) => {
+    // 1. Optimistic UI update
     setAttempts(prev =>
       prev.map(att => {
         if (att.id === attemptId) {
           return {
             ...att,
             feedback: {
-              instructorName: 'Prof. Sharma',
+              instructorName: activeUser?.name || 'Prof. Sharma',
               text: feedbackText,
               date: new Date().toISOString().split('T')[0],
               aiSuggestions: aiSuggestions || (att.feedback?.aiSuggestions || [])
@@ -371,6 +374,35 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return att;
       })
     );
+
+    // 2. Call backend API
+    const token = localStorage.getItem('mht_cet_token');
+    try {
+      const response = await fetch(`http://localhost:5000/api/attempts/${attemptId}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ text: feedbackText })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAttempts(prev =>
+          prev.map(att => {
+            if (att.id === attemptId) {
+              return {
+                ...att,
+                feedback: data.feedback
+              };
+            }
+            return att;
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('[FEEDBACK SAVE WARN] Backend save failed, reverting to local mock state.', err);
+    }
   };
 
   // Generate 5 questions targeting weak topics (AI Adaptive engine)
@@ -432,6 +464,37 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const fetchQuestions = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/questions');
+      if (response.ok) {
+        const data = await response.json();
+        const mapped = data.map((q: any) => ({
+          id: q._id,
+          subject: q.subject,
+          topic: q.chapter,
+          difficulty: q.difficulty,
+          question: q.question_text,
+          options: [q.options.A, q.options.B, q.options.C, q.options.D],
+          correctAnswer: q.correct_option === 'A' ? 0 : q.correct_option === 'B' ? 1 : q.correct_option === 'C' ? 2 : 3,
+          explanation: q.explanation,
+          marks: q.subject === 'Mathematics' ? 2 : 1
+        }));
+        setQuestions(prev => {
+          const merged = [...mapped];
+          initialQuestions.forEach(iq => {
+            if (!merged.some(q => q.id === iq.id)) {
+              merged.push(iq);
+            }
+          });
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching questions from database:', err);
+    }
+  };
+
   const fetchEvents = async () => {
     try {
       const response = await fetch('http://localhost:5000/api/events');
@@ -452,9 +515,14 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
+    fetchQuestions();
+  }, []);
+
+  useEffect(() => {
     if (activeUser) {
       fetchEvents();
-      if (activeUser.role === 'student') {
+      fetchQuestions();
+      if (activeUser.role === 'student' || activeUser.role === 'teacher' || activeUser.role === 'admin') {
         fetchAttempts();
       }
     }
@@ -464,7 +532,12 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const token = localStorage.getItem('mht_cet_token');
     if (!token) return;
     try {
-      const response = await fetch('http://localhost:5000/api/student/test-attempts', {
+      const isStaff = activeUser?.role === 'teacher' || activeUser?.role === 'admin';
+      const endpoint = isStaff 
+        ? 'http://localhost:5000/api/admin/attempts'
+        : 'http://localhost:5000/api/student/test-attempts';
+
+      const response = await fetch(endpoint, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -503,6 +576,18 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: attempt._id,
             testId: attempt.testId || '',
             testName: attempt.test_name,
+            studentName: attempt.studentName || 'Student',
+            subject: attempt.responses && attempt.responses.length > 0 && attempt.responses[0].subject
+              ? attempt.responses[0].subject
+              : (attempt.test_name.toLowerCase().includes('physics')
+                ? 'Physics'
+                : attempt.test_name.toLowerCase().includes('chemistry')
+                  ? 'Chemistry'
+                  : attempt.test_name.toLowerCase().includes('math')
+                    ? 'Mathematics'
+                    : attempt.test_name.toLowerCase().includes('biology')
+                      ? 'Biology'
+                      : 'General'),
             date: attempt.createdAt ? attempt.createdAt.split('T')[0] : (attempt.date || new Date().toISOString().split('T')[0]),
             score: attempt.score,
             maxScore: attempt.max_score,
@@ -646,6 +731,7 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsMockTestActive,
         fetchEvents,
         fetchAttempts,
+        fetchQuestions,
         stats,
         fetchStats,
         setStats,

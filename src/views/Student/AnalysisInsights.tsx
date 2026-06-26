@@ -483,6 +483,76 @@ export const AnalysisInsights: React.FC = () => {
           );
         })()}
 
+        {/* Teacher Evaluation Feedback Log */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <UserCheck size={18} style={{ color: 'var(--accent)' }} /> Teacher Evaluation & Feedback Logs
+          </h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+            Direct guidelines and manual reviews submitted by institute faculty advisors evaluating your mock attempts.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
+            {(() => {
+              const reviewedAttempts = attempts.filter(att => 
+                att.feedback && 
+                att.feedback.text && 
+                att.feedback.instructorName && 
+                att.feedback.instructorName !== 'AI Engine' && 
+                att.feedback.instructorName !== 'AI Diagnostic Engine'
+              );
+
+              if (reviewedAttempts.length === 0) {
+                return (
+                  <div style={{ padding: '24px', backgroundColor: 'var(--primary-light)', border: '1px dashed var(--border)', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    📢 No manual faculty evaluations logged yet. Once your teacher reviews your mock submissions from the Teacher Portal, their specialized feedback and target guidance notes will appear here.
+                  </div>
+                );
+              }
+
+              return reviewedAttempts.map(att => (
+                <div 
+                  key={att.id} 
+                  style={{ 
+                    padding: '18px', 
+                    borderRadius: '8px', 
+                    border: '1px solid var(--border)', 
+                    backgroundColor: 'var(--bg-card)', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '12px' 
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>{att.testName}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>Reviewed by {att.feedback?.instructorName} on {att.feedback?.date}</span>
+                    </div>
+                    <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
+                      Accuracy: {att.accuracy}% | Score: {att.score}/{att.maxScore}
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.5', padding: '10px 14px', backgroundColor: 'var(--primary-light)', borderRadius: '6px', borderLeft: '3px solid var(--accent)' }}>
+                    "{att.feedback?.text}"
+                  </div>
+
+                  {att.feedback?.aiSuggestions && att.feedback.aiSuggestions.length > 0 && (
+                    <div>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-light)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>Target Improvement Steps:</span>
+                      <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {att.feedback.aiSuggestions.map((sug, sIdx) => (
+                          <li key={sIdx}>{sug}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
+
         {/* Subject Navigation Tabs & Radar Chart */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

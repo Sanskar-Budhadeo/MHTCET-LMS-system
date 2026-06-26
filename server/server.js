@@ -493,6 +493,44 @@ app.get('/api/admin/pending-attempts', adminMiddleware, async (req, res, next) =
   }
 });
 
+// GET all attempts for admin/teacher review
+app.get('/api/admin/attempts', adminOrTeacherMiddleware, async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const list = await TestAttempt.find({}).sort({ createdAt: -1 });
+      
+      const studentIds = [...new Set(list.map(att => att.student_id).filter(id => id && mongoose.isValidObjectId(id)))];
+      const students = await User.find({ _id: { $in: studentIds } }, 'name email');
+      const studentMap = {};
+      students.forEach(s => {
+        studentMap[s._id.toString()] = s.name;
+      });
+
+      const formatted = list.map(att => ({
+        _id: att._id,
+        testId: att.testId || '',
+        test_name: att.test_name,
+        student_id: att.student_id,
+        studentName: studentMap[att.student_id] || 'Student',
+        score: att.score,
+        max_score: att.max_score,
+        time_spent_seconds: att.time_spent_seconds,
+        accuracy: att.accuracy,
+        responses: att.responses || [],
+        feedback: att.feedback || null,
+        ai_analysis: att.ai_analysis || null,
+        createdAt: att.createdAt ? att.createdAt.toISOString() : new Date().toISOString()
+      }));
+
+      res.json(formatted);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Get Student Dashboard Stats
 app.get('/api/user/dashboard-stats', authMiddleware, async (req, res, next) => {
   try {
@@ -1320,6 +1358,31 @@ app.post('/api/student/analyze-test', authMiddleware, async (req, res, next) => 
       analysisResult = JSON.parse(response.text);
     }
 
+    let dbResponses = scoreData.responses || req.body.responses || [];
+    if ((!dbResponses || dbResponses.length === 0) && scoreData.answers) {
+      const optionMap = { 0: 'A', 1: 'B', 2: 'C', 3: 'D' };
+      dbResponses = await Promise.all(
+        Object.entries(scoreData.answers).map(async ([qId, ans]) => {
+          let questionObj = null;
+          try {
+            if (mongoose.connection.readyState === 1 && mongoose.isValidObjectId(qId)) {
+              questionObj = await Question.findById(qId);
+            }
+          } catch (e) {
+            console.warn('[DB SEARCH WARN] Failed looking up question details for ID', qId, e.message);
+          }
+          return {
+            questionId: qId,
+            selectedOption: ans.selected !== undefined && ans.selected !== -1 ? optionMap[ans.selected] : '',
+            isCorrect: ans.isCorrect,
+            timeSpent: ans.timeTaken || 0,
+            chapter: questionObj ? questionObj.chapter : (ans.chapter || 'General'),
+            subject: questionObj ? questionObj.subject : (ans.subject || 'General')
+          };
+        })
+      );
+    }
+
     const attemptData = {
       student_id: userId,
       test_name: test_name || 'Practice Quiz',
@@ -1328,7 +1391,7 @@ app.post('/api/student/analyze-test', authMiddleware, async (req, res, next) => 
       max_score: scoreData.maxScore,
       time_spent_seconds: scoreData.timeSpent,
       accuracy: scoreData.accuracy,
-      responses: scoreData.responses || req.body.responses || [],
+      responses: dbResponses,
       percentile: scoreData.percentile || req.body.percentile || null,
       nationalRank: scoreData.nationalRank || req.body.nationalRank || null,
       ai_analysis: analysisResult
@@ -1447,11 +1510,11 @@ app.get('/api/admin/users', authMiddleware, async (req, res, next) => {
   }
 });
 
-// GET individual user details drilldown (Admin / Executive only)
+// GET individual user details drilldown (Admin / Executive / Teacher)
 app.get('/api/admin/users/:id', authMiddleware, async (req, res, next) => {
   try {
-    if (req.user.role !== 'admin' && req.user.role !== 'executive') {
-      return res.status(403).json({ error: 'Access forbidden: Admin or Executive role required.' });
+    if (req.user.role !== 'admin' && req.user.role !== 'executive' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Access forbidden: Admin, Executive, or Teacher role required.' });
     }
     const { id } = req.params;
     const user = await User.findById(id).populate({
@@ -1462,6 +1525,46 @@ app.get('/api/admin/users/:id', authMiddleware, async (req, res, next) => {
       return res.status(404).json({ error: 'User not found.' });
     }
     res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST save attempt feedback (Admin / Teacher only)
+app.post('/api/attempts/:attemptId/feedback', authMiddleware, async (req, res, next) => {
+  const { attemptId } = req.params;
+  const { text } = req.body;
+  try {
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access forbidden: Teacher or Admin role required.' });
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      const attempt = await TestAttempt.findById(attemptId);
+      if (!attempt) {
+        return res.status(404).json({ error: 'Test attempt not found.' });
+      }
+
+      attempt.feedback = {
+        instructorName: req.user.name || 'Instructor',
+        text: text || '',
+        date: new Date().toISOString().split('T')[0],
+        aiSuggestions: attempt.feedback?.aiSuggestions || []
+      };
+
+      await attempt.save();
+      res.json({ success: true, feedback: attempt.feedback });
+    } else {
+      res.json({
+        success: true,
+        feedback: {
+          instructorName: req.user.name || 'Instructor',
+          text: text || '',
+          date: new Date().toISOString().split('T')[0],
+          aiSuggestions: []
+        }
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -1667,7 +1770,9 @@ app.get('/api/tests', authMiddleware, async (req, res, next) => {
       list = list.filter(test => {
         if (!test.isPublished) return false;
         if (!test.scheduledTime) return true;
-        return new Date(test.scheduledTime) <= now;
+        const scheduledDate = new Date(test.scheduledTime);
+        if (isNaN(scheduledDate.getTime())) return true;
+        return scheduledDate <= now;
       });
     }
     res.json(list);
@@ -2192,6 +2297,8 @@ app.post('/api/teacher/generate-report', authMiddleware, async (req, res, next) 
 3. Review formula cheat sheets for Vectors cross products.`;
       }
 
+      student.teacherReport = reportText;
+      await student.save();
       res.json({ report: reportText });
     } else {
       res.json({

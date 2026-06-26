@@ -24,6 +24,7 @@ export interface TestAttempt {
   id: string;
   testId: string;
   testName: string;
+  studentName?: string;
   subject?: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' | 'General';
   date: string;
   score: number;

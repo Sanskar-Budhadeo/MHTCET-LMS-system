@@ -331,6 +331,7 @@ export const MockTestEngine: React.FC = () => {
       .then(data => {
         setActiveTest(null);
         setShowSubmitConfirm(false);
+        if (fetchAttempts) fetchAttempts();
         
         setReviewAttempt({
           id: data.attemptId,

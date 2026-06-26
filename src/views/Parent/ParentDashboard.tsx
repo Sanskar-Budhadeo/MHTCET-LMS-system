@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLms } from '../../context/LmsContext';
-import { TrendingUp, Calendar, MessageSquare, Sparkles, Clock, Bell, Check, X, ShieldAlert, CheckCircle, AlertTriangle, Award, Users, BookOpen } from 'lucide-react';
+import { TrendingUp, Calendar, MessageSquare, Sparkles, Clock, Bell, Check, X, ShieldAlert, CheckCircle, AlertTriangle, Award, Users, BookOpen, FileText } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 
 interface SystemAlertData {
@@ -21,6 +21,13 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
   const [parentData, setParentData] = useState<any>(null);
   const [studentAnalytics, setStudentAnalytics] = useState<any>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [showReportCard, setShowReportCard] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleOpen = () => setShowReportCard(true);
+    window.addEventListener('open-report-card', handleOpen);
+    return () => window.removeEventListener('open-report-card', handleOpen);
+  }, []);
   
   // Notification Bell States
   const [alerts, setAlerts] = useState<SystemAlertData[]>([]);
@@ -204,24 +211,62 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
   const unreadAlerts = alerts.filter(a => !a.read);
 
   // Subject progress calculations
-  const getSubjectMastery = (subjectName: string, totalChapters: number) => {
-    const subjectAttempts = recentAttempts.filter((att: any) => att.subject === subjectName);
-    const masteredChapters = new Set(
-      subjectAttempts
-        .filter((att: any) => att.accuracy >= 70)
-        .map((att: any) => att.testName)
+  const getSubjectProgress = (subjectName: string, totalChapters: number) => {
+    const subjectChapters: { [key: string]: string[] } = {
+      Physics: ['Rotational Dynamics', 'Oscillations', 'Mechanical Properties of Fluids'],
+      Chemistry: ['Chemical Kinetics', 'Solid State'],
+      Mathematics: ['Vectors', 'Trigonometric Functions'],
+      Biology: ['Photosynthesis', 'Respiration and Energy Transfer']
+    };
+    const chapters = subjectChapters[subjectName] || [];
+    const limitChapters = chapters.length > 0 ? chapters.length : totalChapters;
+
+    // Filter attempts for this subject
+    const subjectAttempts = recentAttempts.filter((att: any) => 
+      att.subject === subjectName ||
+      (att.testName && att.testName.toLowerCase().includes(subjectName.toLowerCase()))
     );
+    const testsCount = subjectAttempts.length;
+
+    // Average accuracy
+    let totalScoreAcc = 0;
+    subjectAttempts.forEach((att: any) => { totalScoreAcc += att.accuracy; });
+    const avgAcc = testsCount > 0 ? (totalScoreAcc / testsCount) : 0;
+
+    // Study hours factor
+    const hoursFactor = hoursStudied > 0 ? (hoursStudied / 4) : 0;
+
+    // Mock notes count simulation
+    const notesCount = studentObj.savedNotes ? studentObj.savedNotes.length : 1; 
+    const notesFactor = Math.min((notesCount / 4) + 1, 3);
+
+    let progressPercentage = 0;
+    if (testsCount === 0) {
+      const notesWeight = Math.min((notesFactor / 3) * 100, 100) * 0.5;
+      const timeWeight = Math.min((hoursFactor / 5) * 100, 100) * 0.5;
+      progressPercentage = Math.round(notesWeight + timeWeight);
+    } else {
+      const accWeight = avgAcc * 0.4;
+      const testWeight = Math.min((testsCount / 4) * 100, 100) * 0.3;
+      const notesWeight = Math.min((notesFactor / 3) * 100, 100) * 0.15;
+      const timeWeight = Math.min((hoursFactor / 5) * 100, 100) * 0.15;
+      progressPercentage = Math.round(accWeight + testWeight + notesWeight + timeWeight);
+    }
+
+    const completed = Math.round((progressPercentage / 100) * limitChapters);
+
     return {
-      completed: Math.min(masteredChapters.size, totalChapters),
-      total: totalChapters
+      completed: Math.min(completed, limitChapters),
+      total: limitChapters,
+      percentage: Math.min(progressPercentage, 100)
     };
   };
 
   const subjectProgress = [
-    { subject: 'Physics', ...getSubjectMastery('Physics', 4), badge: 'badge-physics' },
-    { subject: 'Chemistry', ...getSubjectMastery('Chemistry', 4), badge: 'badge-chemistry' },
-    { subject: 'Mathematics', ...getSubjectMastery('Mathematics', 3), badge: 'badge-mathematics' },
-    { subject: 'Biology', ...getSubjectMastery('Biology', 3), badge: 'badge-biology' }
+    { subject: 'Physics', ...getSubjectProgress('Physics', 4), badge: 'badge-physics' },
+    { subject: 'Chemistry', ...getSubjectProgress('Chemistry', 4), badge: 'badge-chemistry' },
+    { subject: 'Mathematics', ...getSubjectProgress('Mathematics', 3), badge: 'badge-mathematics' },
+    { subject: 'Biology', ...getSubjectProgress('Biology', 3), badge: 'badge-biology' }
   ];
 
   return (
@@ -385,7 +430,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontWeight: 600, textTransform: 'uppercase' }}>Syllabus Study Hours</span>
-                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-main)' }}>{hoursStudied} Hours</div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-main)' }}>{typeof hoursStudied === 'number' ? hoursStudied.toFixed(2) : hoursStudied} Hours</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                   <div style={{ width: '100px', height: '6px', backgroundColor: 'var(--primary-light)', borderRadius: '99px', overflow: 'hidden' }}>
                     <div style={{ width: `${Math.min(100, (hoursStudied / 40) * 100)}%`, height: '100%', backgroundColor: 'var(--accent)' }}></div>
@@ -411,20 +456,20 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
                 <TrendingUp size={32} />
               </div>
               <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontWeight: 600, textTransform: 'uppercase' }}>Subject Mastery index</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontWeight: 600, textTransform: 'uppercase' }}>Average Mock Accuracy</span>
                 <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {chartData.length > 0 ? `${chartData[chartData.length - 1].accuracy}%` : '82%'}
+                  {studentObj.avgAccuracy !== undefined ? `${studentObj.avgAccuracy}%` : '82%'}
                 </div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Latest syllabus attempt accuracy</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Overall cumulative test accuracy</span>
               </div>
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
-            {/* Subject-wise Analysis */}
+            {/* Subject-wise Progress Tracker */}
             <div className="card">
               <h3 style={{ fontSize: '1.15rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <BookOpen size={18} style={{ color: 'var(--accent)' }} /> Subject-wise Analysis
+                <BookOpen size={18} style={{ color: 'var(--accent)' }} /> Subject-wise Progress Tracker
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {subjectProgress.map(prog => (
@@ -434,13 +479,13 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
                         {prog.subject}
                       </span>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        {prog.completed}/{prog.total} Chapters Mastered
+                        {prog.percentage}% Progress ({prog.completed}/{prog.total} Chapters)
                       </span>
                     </div>
                     <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--primary-light)', borderRadius: '99px', overflow: 'hidden' }}>
                       <div 
                         style={{ 
-                          width: `${(prog.completed / prog.total) * 100}%`, 
+                          width: `${prog.percentage}%`, 
                           height: '100%', 
                           backgroundColor: prog.subject === 'Physics' ? '#0369a1' : prog.subject === 'Chemistry' ? '#b45309' : prog.subject === 'Mathematics' ? '#a21caf' : '#15803d',
                           borderRadius: '99px' 
@@ -623,6 +668,31 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
               </div>
             </div>
 
+            {/* Official Teacher Evaluation Report */}
+            <div className="card" style={{ gridColumn: 'span 2', borderLeft: '4px solid var(--accent)', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
+              <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <FileText size={18} style={{ color: 'var(--accent)' }} /> Official Teacher Evaluation Report
+              </h3>
+              {studentObj.teacherReport ? (
+                <div style={{
+                  backgroundColor: 'var(--primary-light)',
+                  border: '1px dashed var(--border)',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  fontSize: '0.85rem',
+                  lineHeight: '1.6',
+                  color: 'var(--text-main)',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {studentObj.teacherReport}
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>
+                  No official academic evaluation report has been submitted by the teacher yet. When the teacher generates a progress report, it will display here instantly.
+                </p>
+              )}
+            </div>
+
             {/* AI Parent Improvement Plan Card */}
             <div className="card" style={{ gridColumn: 'span 2', borderLeft: '4px solid var(--accent)', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
               <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
@@ -784,6 +854,215 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({ activeSection 
                 </table>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Printable Report Card Modal */}
+      {showReportCard && (
+        <div className="modal-overlay" onClick={() => setShowReportCard(false)} style={{ zIndex: 1100 }}>
+          <div 
+            className="modal-content" 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '800px', 
+              width: '95%', 
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '0', 
+              borderRadius: '16px', 
+              backgroundColor: 'var(--bg-card)',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              border: '1px solid var(--border)'
+            }}
+          >
+            {/* Modal Header (Hidden on print) */}
+            <div className="no-print" style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              padding: '16px 24px', 
+              borderBottom: '1px solid var(--border)',
+              backgroundColor: 'var(--primary-light)',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10
+            }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                Academic Report Card & Achievement Sheet
+              </h3>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={() => window.print()}
+                  className="btn btn-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Print Report Card
+                </button>
+                <button 
+                  onClick={() => setShowReportCard(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Report Content Area */}
+            <div id="report-card-print-area" style={{ padding: '40px', color: '#09090b', backgroundColor: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              
+              {/* Outer Decorative Border */}
+              <div style={{ border: '4px double #d97706', padding: '30px', borderRadius: '8px', position: 'relative' }}>
+                
+                {/* Header Section */}
+                <div style={{ textAlign: 'center', marginBottom: '30px', borderBottom: '2px solid #d97706', paddingBottom: '20px' }}>
+                  <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: '#09090b', letterSpacing: '-0.02em', textTransform: 'uppercase', margin: '0 0 6px 0' }}>
+                    MHT-CET Ace Prep Portal
+                  </h1>
+                  <p style={{ fontSize: '0.9rem', color: '#4b5563', margin: '0 0 10px 0', fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    Official Student Academic Progress Sheet
+                  </p>
+                  <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Verification Reference: REF-{studentObj._id ? studentObj._id.substring(0, 8).toUpperCase() : 'PORTAL'}</span>
+                </div>
+
+                {/* Info Metadata Block */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px', marginBottom: '30px', fontSize: '0.9rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span>Candidate Name: <strong style={{ color: '#09090b' }}>{studentName}</strong></span>
+                    <span>Student Email: <span style={{ color: '#4b5563' }}>{studentObj.email || 'N/A'}</span></span>
+                    <span>Permanent Reg. No (PRN): <strong style={{ color: '#d97706' }}>{studentObj.prn || 'Pending'}</strong></span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'right' }}>
+                    <span>Target Exam: <strong style={{ color: '#09090b' }}>{studentObj.targetExam || 'MHT-CET'} ({studentObj.targetCourse || 'PCM'})</strong></span>
+                    <span>Academic Term: <span style={{ color: '#4b5563' }}>Year 2026-2027</span></span>
+                    <span>Issue Date: <strong style={{ color: '#09090b' }}>{new Date().toLocaleDateString('en-IN')}</strong></span>
+                  </div>
+                </div>
+
+                {/* Score / Metrics Table Block */}
+                <h3 style={{ fontSize: '1.05rem', color: '#09090b', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
+                  Cumulative Performance Metrics
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '30px' }}>
+                  <div style={{ border: '1px solid #e5e7eb', padding: '12px', borderRadius: '6px', textAlign: 'center', backgroundColor: '#f9fafb' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>Syllabus Hours</span>
+                    <strong style={{ fontSize: '1.25rem', color: '#09090b' }}>{typeof hoursStudied === 'number' ? hoursStudied.toFixed(2) : hoursStudied} hrs</strong>
+                  </div>
+                  <div style={{ border: '1px solid #e5e7eb', padding: '12px', borderRadius: '6px', textAlign: 'center', backgroundColor: '#f9fafb' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>Active Streak</span>
+                    <strong style={{ fontSize: '1.25rem', color: '#09090b' }}>{studentStreak} Days</strong>
+                  </div>
+                  <div style={{ border: '1px solid #e5e7eb', padding: '12px', borderRadius: '6px', textAlign: 'center', backgroundColor: '#f9fafb' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 600, display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>Average Accuracy</span>
+                    <strong style={{ fontSize: '1.25rem', color: '#10b981' }}>{studentObj.avgAccuracy || 82}%</strong>
+                  </div>
+                </div>
+
+                {/* Subject Wise Tracker */}
+                <h3 style={{ fontSize: '1.05rem', color: '#09090b', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
+                  Subject-wise Progress
+                </h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '35px', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>Subject Syllabus Node</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700 }}>Completed</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700 }}>Total Chapters</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>Progress Ratio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subjectProgress.map(prog => (
+                      <tr key={prog.subject} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: 600 }}>{prog.subject}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>{prog.completed}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>{prog.total}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#4b5563' }}>{prog.percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Official Teacher Evaluation Comments */}
+                <h3 style={{ fontSize: '1.05rem', color: '#09090b', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px', marginBottom: '12px', textTransform: 'uppercase' }}>
+                  Instructor Diagnostics & Qualitative Remarks
+                </h3>
+                <div style={{ 
+                  padding: '16px', 
+                  backgroundColor: '#f9fafb', 
+                  border: '1px dashed #d1d5db', 
+                  borderRadius: '6px', 
+                  fontSize: '0.85rem', 
+                  lineHeight: '1.6', 
+                  color: '#1f2937', 
+                  marginBottom: '40px',
+                  whiteSpace: 'pre-wrap',
+                  minHeight: '80px',
+                  textAlign: 'left'
+                }}>
+                  {studentObj.teacherReport || "No official academic evaluation report has been submitted by the teacher yet. Recommending continuing full syllabus mock tests and maintaining consistent portal log streak."}
+                </div>
+
+                {/* Certification Signatures Column */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginTop: '60px', textAlign: 'center', fontSize: '0.8rem' }}>
+                  <div>
+                    <div style={{ borderBottom: '1px solid #9ca3af', width: '80%', margin: '0 auto 8px', height: '24px' }}></div>
+                    <span>Class Counselor</span>
+                  </div>
+                  <div>
+                    <div style={{ borderBottom: '1px solid #9ca3af', width: '80%', margin: '0 auto 8px', height: '24px' }}></div>
+                    <span>LMS Center Principal</span>
+                  </div>
+                  <div>
+                    <div style={{ borderBottom: '1px solid #9ca3af', width: '80%', margin: '0 auto 8px', height: '24px' }}></div>
+                    <span>Parent/Guardian Signature</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Print styles override */}
+            <style dangerouslySetInnerHTML={{ __html: `
+              @media print {
+                /* Hide everything in page */
+                body * {
+                  visibility: hidden !important;
+                }
+                /* Show report card content and its children */
+                #report-card-print-area, #report-card-print-area * {
+                  visibility: visible !important;
+                }
+                #report-card-print-area {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background-color: white !important;
+                  color: black !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+                .modal-overlay {
+                  background-color: transparent !important;
+                  position: static !important;
+                }
+                .modal-content {
+                  box-shadow: none !important;
+                  border: none !important;
+                  background-color: transparent !important;
+                  position: static !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                }
+              }
+            `}} />
+
           </div>
         </div>
       )}

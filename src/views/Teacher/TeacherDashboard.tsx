@@ -47,6 +47,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
   const [loadingReport, setLoadingReport] = useState<boolean>(false);
   const [reportError, setReportError] = useState<string | null>(null);
 
+  // Teacher feedback submission states
+  const [feedbackInputs, setFeedbackInputs] = useState<{ [attemptId: string]: string }>({});
+
+  const submitTeacherFeedback = (attemptId: string, text: string) => {
+    if (!text.trim()) return;
+    const token = localStorage.getItem('mht_cet_token');
+    fetch(`http://localhost:5000/api/attempts/${attemptId}/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      body: JSON.stringify({ text })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to submit feedback');
+        return res.json();
+      })
+      .then(data => {
+        alert('Feedback guidelines successfully published to Student & Parent portals!');
+        // Update local studentDetail copy so the UI refreshes immediately
+        if (studentDetail && studentDetail.testProgress) {
+          const updatedProgress = studentDetail.testProgress.map((att: any) => {
+            if (att._id === attemptId || att.id === attemptId) {
+              return { ...att, feedback: data.feedback };
+            }
+            return att;
+          });
+          setStudentDetail({ ...studentDetail, testProgress: updatedProgress });
+        }
+        // Clear input field
+        setFeedbackInputs(prev => ({ ...prev, [attemptId]: '' }));
+      })
+      .catch(err => {
+        console.error('Error submitting feedback:', err);
+        alert('Failed to save feedback on database.');
+      });
+  };
+
   // Custom Test Schedule State
   const [testTitle, setTestTitle] = useState<string>('');
   const [testDate, setTestDate] = useState<string>('');
@@ -899,6 +938,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
                               <div><strong>AI Diagnostic:</strong> <span style={{ fontStyle: 'italic', color: 'var(--text-main)' }}>{att.ai_analysis.student_feedback || 'No comments logged.'}</span></div>
                             </div>
                           )}
+
+                          {att.feedback && att.feedback.text && (
+                            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.75rem' }}>
+                              <div>
+                                <strong>Instructor Remarks ({att.feedback.instructorName || 'Teacher'}):</strong>
+                                <span style={{ display: 'block', fontStyle: 'italic', color: 'var(--text-main)', marginTop: '2px', backgroundColor: 'var(--primary-light)', padding: '6px 10px', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                                  "{att.feedback.text}"
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Submit custom feedback guidelines form */}
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                            <input
+                              type="text"
+                              placeholder="Write guidelines / remarks..."
+                              value={feedbackInputs[att._id || att.id] || ''}
+                              onChange={e => setFeedbackInputs(prev => ({ ...prev, [att._id || att.id]: e.target.value }))}
+                              style={{
+                                flex: 1,
+                                padding: '6px 10px',
+                                fontSize: '0.75rem',
+                                border: '1px solid var(--border)',
+                                borderRadius: '4px',
+                                backgroundColor: 'var(--bg-card)',
+                                color: 'var(--text-main)'
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => submitTeacherFeedback(att._id || att.id, feedbackInputs[att._id || att.id] || '')}
+                              className="btn btn-primary btn-xs"
+                              style={{ padding: '0 12px', fontSize: '0.75rem', height: '30px', display: 'flex', alignItems: 'center' }}
+                            >
+                              Submit
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
