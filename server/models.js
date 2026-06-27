@@ -201,6 +201,10 @@ const UserSchema = new mongoose.Schema({
   phone: {
     type: String
   },
+  profileAvatar: {
+    type: String,
+    default: 'avatar1'
+  },
   linkedStudents: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'

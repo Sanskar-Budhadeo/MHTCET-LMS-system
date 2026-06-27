@@ -272,12 +272,11 @@ export const LandingPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // MHT-CET Phase 2 Custom Form States
-  const [phone, setPhone] = useState('');
+  // Student Extra Details
   const [parentName, setParentName] = useState('');
   const [parentEmail, setParentEmail] = useState('');
-  const [parentPassword, setParentPassword] = useState('');
   const [prn, setPrn] = useState('');
+  const [profileAvatar, setProfileAvatar] = useState('avatar1');
 
   // MHT-CET Phase 1 Custom Form States
   const [targetCourse, setTargetCourse] = useState<'PCB' | 'PCM' | 'PCMB'>('PCM');
@@ -292,6 +291,18 @@ export const LandingPage: React.FC = () => {
   const [upiId, setUpiId] = useState('student@okaxis');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+
+  // Avatar options for profile selection
+  const AVATARS = [
+    { id: 'avatar1', emoji: '🎓', label: 'Graduate', color: '#2563eb' },
+    { id: 'avatar2', emoji: '🔬', label: 'Scientist', color: '#059669' },
+    { id: 'avatar3', emoji: '📐', label: 'Engineer', color: '#7c3aed' },
+    { id: 'avatar4', emoji: '🧬', label: 'Biologist', color: '#ea580c' },
+    { id: 'avatar5', emoji: '⚡', label: 'Physics', color: '#d97706' },
+    { id: 'avatar6', emoji: '🔭', label: 'Explorer', color: '#0891b2' },
+    { id: 'avatar7', emoji: '📊', label: 'Analyst', color: '#be185d' },
+    { id: 'avatar8', emoji: '🏆', label: 'Champion', color: '#ca8a04' },
+  ];
 
   const handleRoleChange = (role: 'student' | 'parent' | 'admin' | 'teacher' | 'executive') => {
     setSelectedRole(role);
@@ -328,13 +339,22 @@ export const LandingPage: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password || (isSignUp && !name)) {
+
+    // Parent login uses email + child PRN only (no password)
+    const isParentLogin = !isSignUp && selectedRole === 'parent';
+
+    if (!email || (!isParentLogin && !password) || (isSignUp && !name)) {
       setErrorMsg('Please fill in all required fields.');
       return;
     }
 
-    if (isSignUp && selectedRole === 'parent' && !prn) {
-      setErrorMsg("Child's PRN number is required for parent registration.");
+    if (isParentLogin && !prn) {
+      setErrorMsg("Child's PRN number is required to log in as a parent.");
+      return;
+    }
+
+    if (isSignUp && selectedRole === 'student' && (!parentName || !parentEmail)) {
+      setErrorMsg("Parent's name and email are required.");
       return;
     }
 
@@ -401,22 +421,17 @@ export const LandingPage: React.FC = () => {
             name, 
             email, 
             password, 
-            role: selectedRole,
-            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
-            targetExam: selectedRole === 'student' ? targetExam : undefined,
-            plan: selectedRole === 'student' ? plan : undefined,
-            phone: selectedRole === 'student' ? phone : undefined,
-            parentName: selectedRole === 'student' ? parentName : undefined,
-            parentEmail: selectedRole === 'student' ? parentEmail : undefined,
-            parentPassword: selectedRole === 'student' ? parentPassword : undefined,
-            prn: selectedRole === 'parent' ? prn : undefined
+            role: 'student',
+            targetCourse,
+            targetExam,
+            plan,
+            parentName,
+            parentEmail,
           }
-        : { 
-            email, 
-            password,
-            prn: selectedRole === 'parent' ? prn : undefined,
-            phone: selectedRole === 'student' ? phone : undefined
-          };
+        : selectedRole === 'parent'
+          // Parent login: email + child PRN — no password sent
+          ? { email, prn }
+          : { email, password };
         
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -445,21 +460,32 @@ export const LandingPage: React.FC = () => {
         const expectedPassword = DEMO_PASSWORDS[normalizedEmail];
 
         if (isSignUp) {
-          // For sign-up in offline mode: create a mock new user
+          // For sign-up in offline mode: create a mock new user (always student)
           const newUser = {
             id: 'u_new_' + Date.now(),
             name: name.trim() || 'New User',
             email: normalizedEmail,
-            role: selectedRole,
+            role: 'student',
             streak: 0,
-            plan: selectedRole === 'student' ? plan : undefined,
-            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
-            targetExam: selectedRole === 'student' ? targetExam : undefined,
+            plan,
+            targetCourse,
+            targetExam,
             loginDates: [],
           };
           login(newUser as any, 'offline-demo-token');
           setShowLoginModal(false);
           setShowPaymentModal(false);
+        } else if (selectedRole === 'parent') {
+          // Parent offline login: just check email exists in demo map + PRN provided
+          const offlineParent = DEMO_USERS[normalizedEmail];
+          if (offlineParent && offlineParent.role === 'parent' && prn) {
+            login(offlineParent, 'offline-demo-token');
+            setShowLoginModal(false);
+          } else if (!prn) {
+            setErrorMsg("Child's PRN number is required.");
+          } else {
+            setErrorMsg('Parent account not found. Please check your email.');
+          }
         } else if (expectedPassword && password === expectedPassword) {
           // Valid demo credentials — log in offline
           const offlineUser = DEMO_USERS[normalizedEmail];
@@ -525,14 +551,11 @@ export const LandingPage: React.FC = () => {
             <button onClick={() => { handleRoleChange('parent'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
               Parent Portal
             </button>
-            <button onClick={() => { handleRoleChange('teacher'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
-              Teacher Portal
-            </button>
             <button onClick={() => { handleRoleChange('executive'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-outline btn-sm">
               Executive Portal
             </button>
-            <button onClick={() => { handleRoleChange('admin'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-primary btn-sm">
-              Admin Console
+            <button onClick={() => { handleRoleChange('teacher'); setShowLoginModal(true); setIsSignUp(false); }} className="btn btn-primary btn-sm">
+              Faculty Login
             </button>
           </div>
         </div>
@@ -710,12 +733,12 @@ export const LandingPage: React.FC = () => {
               maxWidth: '440px',
               '--role-accent': selectedRole === 'student' ? '#2563eb' : 
                                selectedRole === 'parent' ? '#ea580c' : 
-                               selectedRole === 'teacher' ? '#059669' : 
+                               (selectedRole === 'teacher' || selectedRole === 'admin') ? '#059669' : 
                                selectedRole === 'executive' ? '#7c3aed' : 
                                '#e11d48',
               '--role-accent-rgb': selectedRole === 'student' ? '37, 99, 235' : 
                                    selectedRole === 'parent' ? '234, 88, 12' : 
-                                   selectedRole === 'teacher' ? '5, 150, 105' : 
+                                   (selectedRole === 'teacher' || selectedRole === 'admin') ? '5, 150, 105' : 
                                    selectedRole === 'executive' ? '124, 58, 237' : 
                                    '225, 29, 72'
             } as React.CSSProperties}
@@ -725,36 +748,53 @@ export const LandingPage: React.FC = () => {
               style={{ fontSize: '1.5rem', marginBottom: '8px', textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
               title="Double click to autofill demo data"
             >
-              {isSignUp ? 'Create Account' : 'Portal Sign In'}
+              {isSignUp ? 'Create Account' :
+               (selectedRole === 'teacher' || selectedRole === 'admin') ? 'Faculty Login' :
+               'Portal Sign In'}
             </h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '24px', textAlign: 'center' }}>
-              {isSignUp ? 'Sign up to start preparing for MHT-CET PCMB.' : 'Enter your credentials to access the prep portal.'}
+              {isSignUp ? 'Sign up to start preparing for MHT-CET PCMB.' :
+               (selectedRole === 'teacher' || selectedRole === 'admin') ? 'Faculty & Admin access portal. Select your role below.' :
+               'Enter your credentials to access the prep portal.'}
             </p>
 
             {!isSignUp && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', padding: '12px 14px', backgroundColor: 'var(--primary-light)', borderRadius: '16px', border: '1px solid var(--border)' }}>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Demo Account Quick Logins</span>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {(['student', 'parent', 'teacher', 'executive', 'admin'] as const).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => { handleRoleChange(r); setPassword('password123'); }}
-                      style={{
-                        fontSize: '0.75rem',
-                        padding: '6px 12px',
-                        borderRadius: '9999px',
-                        border: '1px solid var(--border)',
-                        backgroundColor: selectedRole === r ? 'var(--accent)' : 'var(--bg-card)',
-                        color: selectedRole === r ? 'var(--bg-card)' : 'var(--text-main)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'var(--transition)'
-                      }}
-                    >
-                      {r.charAt(0).toUpperCase() + r.slice(1)}
-                    </button>
-                  ))}
+                  {(['student', 'parent', 'faculty', 'executive'] as const).map((r) => {
+                    const isFaculty = r === 'faculty';
+                    const isActive = isFaculty
+                      ? (selectedRole === 'teacher' || selectedRole === 'admin')
+                      : selectedRole === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => {
+                          if (isFaculty) {
+                            handleRoleChange('teacher');
+                          } else {
+                            handleRoleChange(r as any);
+                          }
+                          if (r !== 'parent') setPassword('password123');
+                        }}
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '6px 12px',
+                          borderRadius: '9999px',
+                          border: '1px solid var(--border)',
+                          backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-card)',
+                          color: isActive ? 'var(--bg-card)' : 'var(--text-main)',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'var(--transition)'
+                        }}
+                      >
+                        {r === 'faculty' ? 'Faculty' : r.charAt(0).toUpperCase() + r.slice(1)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -786,164 +826,172 @@ export const LandingPage: React.FC = () => {
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: '20px' }}>
-                <label className="form-label">Password</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
-                    placeholder="••••••••"
-                    style={{ paddingRight: '40px' }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '12px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: 'var(--text-light)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: 0
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-
-
-              {!isSignUp && selectedRole === 'parent' && (
-                <div className="form-group">
-                  <label className="form-label">Child's PRN Number</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={prn}
-                    onChange={(e) => { setPrn(e.target.value); setErrorMsg(''); }}
-                    placeholder="Enter Child's PRN (e.g. MHT202612345)"
-                    required
-                  />
+              {/* Password — hidden for parent login (they use email + PRN) */}
+              {!(selectedRole === 'parent' && !isSignUp) && (
+                <div className="form-group" style={{ marginBottom: '20px' }}>
+                  <label className="form-label">Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className="form-input"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+                      placeholder="••••••••"
+                      style={{ paddingRight: '40px' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-light)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: 0
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
               )}
 
+
+
+              {/* Faculty Role Selector — shown when teacher or admin is selected (login only) */}
+              {!isSignUp && (selectedRole === 'teacher' || selectedRole === 'admin') && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="form-label" style={{ marginBottom: '10px', display: 'block' }}>Faculty Role</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {(['teacher', 'admin'] as const).map((r) => {
+                      const meta = {
+                        teacher: { label: 'Teacher', icon: '👨‍🏫', desc: 'Class & test management' },
+                        admin:   { label: 'Admin',   icon: '🛡️',          desc: 'System administration' },
+                      }[r];
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => handleRoleChange(r)}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '14px 10px',
+                            borderRadius: '12px',
+                            border: selectedRole === r ? '2px solid #059669' : '2px solid var(--border)',
+                            backgroundColor: selectedRole === r ? 'rgba(5,150,105,0.12)' : 'var(--bg-card)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            transform: selectedRole === r ? 'scale(1.04)' : 'scale(1)',
+                            boxShadow: selectedRole === r ? '0 0 14px rgba(5,150,105,0.35)' : 'none',
+                          }}
+                        >
+                          <span style={{ fontSize: '1.6rem', lineHeight: 1 }}>{meta.icon}</span>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: selectedRole === r ? '#059669' : 'var(--text-main)' }}>{meta.label}</span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textAlign: 'center' }}>{meta.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!isSignUp && selectedRole === 'parent' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Child's PRN Number</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={prn}
+                      onChange={(e) => { setPrn(e.target.value); setErrorMsg(''); }}
+                      placeholder="Enter Child's PRN (e.g. MHT202612345)"
+                      required
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 14px', backgroundColor: 'rgba(234,88,12,0.08)', borderRadius: '10px', border: '1px solid rgba(234,88,12,0.2)', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '1rem', flexShrink: 0 }}>ℹ️</span>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                      Parent accounts are <strong style={{ color: '#ea580c' }}>automatically created</strong> when a student registers. Log in using your registered <strong>email</strong> and your child's <strong>PRN number</strong> — no password needed.
+                    </p>
+                  </div>
+                </>
+              )}
+
+
               {isSignUp && (
                 <>
-                  <div className="form-group" style={{ marginBottom: '16px' }}>
-                    <label className="form-label">Select Profile Role</label>
-                    <select
-                      className="form-select"
-                      value={selectedRole}
-                      onChange={(e) => handleRoleChange(e.target.value as any)}
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--border)',
-                        backgroundColor: 'var(--bg-app)',
-                        color: 'var(--text-main)',
-                        fontSize: '0.875rem'
-                      }}
-                    >
-                      <option value="student">Student</option>
-                      <option value="parent">Parent</option>
-                      <option value="teacher">Teacher (Status: Pending Approval)</option>
-                      <option value="executive">Executive / CEO (BI Metrics)</option>
-                      <option value="admin">System Admin</option>
-                    </select>
-                  </div>
-
-                  {selectedRole === 'parent' && (
-                    <div className="form-group" style={{ marginBottom: '16px' }}>
-                      <label className="form-label">Child's PRN Number</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={prn}
-                        onChange={(e) => { setPrn(e.target.value); setErrorMsg(''); }}
-                        placeholder="Enter Child's PRN (e.g. MHT202612345)"
-                        required
-                      />
-                    </div>
-                  )}
-
+                  {/* Sign-up is always for Student accounts only */}
                   {selectedRole === 'student' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', backgroundColor: 'var(--primary-light)', padding: '14px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--border)' }}>
-                      <div>
-                        <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Student Phone Number</label>
-                        <input
-                          type="tel"
-                          className="form-input"
-                          value={phone}
-                          onChange={(e) => { setPhone(e.target.value); setErrorMsg(''); }}
-                          placeholder="e.g. +91 9876543210"
-                          style={{ fontSize: '0.8rem', padding: '8px 12px' }}
-                          required
-                        />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', backgroundColor: 'var(--primary-light)', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--border)' }}>
+
+                      {/* Student Number — Auto-generated Info */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: 'rgba(37,99,235,0.08)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(37,99,235,0.2)' }}>
+                        <span style={{ fontSize: '1.1rem' }}>🎫</span>
+                        <div>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', display: 'block' }}>Student Number (PRN)</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Your unique PRN will be auto-generated upon registration (e.g. MHT2026XXXXX)</span>
+                        </div>
                       </div>
-                      
-                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>Parent Account Details</span>
+
+                      {/* Parent Account Details */}
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                          👨‍👩‍👧 Parent Account Details
+                          <span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'var(--accent)', textTransform: 'none', letterSpacing: 0 }}>(auto-created — parent logs in with email)</span>
+                        </span>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           <div>
-                            <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>Parent Full Name</label>
+                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '3px' }}>Parent's Full Name</label>
                             <input
                               type="text"
                               className="form-input"
                               value={parentName}
                               onChange={(e) => { setParentName(e.target.value); setErrorMsg(''); }}
-                              placeholder="Parent's Name"
-                              style={{ fontSize: '0.8rem', padding: '8px 12px' }}
+                              placeholder="e.g. Mr. Arvind Sharma"
+                              style={{ fontSize: '0.82rem', padding: '8px 12px' }}
                               required
                             />
                           </div>
                           <div>
-                            <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>Parent Email Address</label>
+                            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '3px' }}>Parent's Email Address</label>
                             <input
                               type="email"
                               className="form-input"
                               value={parentEmail}
                               onChange={(e) => { setParentEmail(e.target.value); setErrorMsg(''); }}
                               placeholder="parent@email.com"
-                              style={{ fontSize: '0.8rem', padding: '8px 12px' }}
+                              style={{ fontSize: '0.82rem', padding: '8px 12px' }}
                               required
                             />
                           </div>
-                          <div>
-                            <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>Parent Password</label>
-                            <input
-                              type="password"
-                              className="form-input"
-                              value={parentPassword}
-                              onChange={(e) => { setParentPassword(e.target.value); setErrorMsg(''); }}
-                              placeholder="Parent Password"
-                              style={{ fontSize: '0.8rem', padding: '8px 12px' }}
-                              required
-                            />
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '6px 10px', backgroundColor: 'rgba(210,255,61,0.06)', borderRadius: '8px', border: '1px solid rgba(210,255,61,0.15)' }}>
+                            ℹ️ Your parent will log in using their <strong>email</strong> + your <strong>student PRN</strong> — no password required.
                           </div>
                         </div>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                      {/* Target Course & Exam */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
                         <div>
-                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Target Course</label>
+                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>🎯 Target Course</label>
                           <select className="form-select" value={targetCourse} onChange={(e) => setTargetCourse(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px', borderRadius: '8px' }}>
-                            <option value="PCM">PCM (Engg)</option>
+                            <option value="PCM">PCM (Engineering)</option>
                             <option value="PCB">PCB (Medical)</option>
                             <option value="PCMB">PCMB (Both)</option>
                           </select>
                         </div>
                         <div>
-                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Target Exam</label>
+                          <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>📋 Target Exam</label>
                           <select className="form-select" value={targetExam} onChange={(e) => setTargetExam(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px', borderRadius: '8px' }}>
                             <option value="MHT-CET">MHT-CET</option>
                             <option value="JEE">JEE Mains</option>
@@ -951,14 +999,17 @@ export const LandingPage: React.FC = () => {
                           </select>
                         </div>
                       </div>
+
+                      {/* Subscription Plan */}
                       <div>
-                        <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Subscription Tier</label>
+                        <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>💳 Subscription Plan</label>
                         <select className="form-select" value={plan} onChange={(e) => setPlan(e.target.value as any)} style={{ fontSize: '0.8rem', padding: '6px', borderRadius: '8px' }}>
-                          <option value="Free">Free (Mock Tests Only)</option>
-                          <option value="Pro">Pro (₹1,499 - AI Insights + Tutor + Mock Tests)</option>
-                          <option value="Premium">Premium (₹2,999 - Full Pack + PDF + Instructor Review)</option>
+                          <option value="Free">Free — Mock Tests Only</option>
+                          <option value="Pro">Pro — ₹1,499 · AI Insights + Tutor + Mock Tests</option>
+                          <option value="Premium">Premium — ₹2,999 · Full Pack + PDF + Instructor Review</option>
                         </select>
                       </div>
+
                     </div>
                   )}
                 </>
@@ -1004,15 +1055,18 @@ export const LandingPage: React.FC = () => {
                   </span>
                 </p>
               ) : (
-                <p style={{ color: 'var(--text-muted)' }}>
-                  Need an account?{' '}
-                  <span 
-                    onClick={() => { setIsSignUp(true); setErrorMsg(''); }} 
-                    style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
-                  >
-                    Create Account
-                  </span>
-                </p>
+                // Hide "Create Account" for parent role — parent accounts are created automatically via student registration
+                selectedRole !== 'parent' && (
+                  <p style={{ color: 'var(--text-muted)' }}>
+                    Need an account?{' '}
+                    <span 
+                      onClick={() => { setIsSignUp(true); setErrorMsg(''); }} 
+                      style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Create Account
+                    </span>
+                  </p>
+                )
               )}
             </div>
           </div>

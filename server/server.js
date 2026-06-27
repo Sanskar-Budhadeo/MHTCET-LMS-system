@@ -909,10 +909,9 @@ app.post('/api/auth/register', async (req, res, next) => {
     targetCourse,
     targetExam,
     plan,
-    phone,
     parentName,
     parentEmail,
-    parentPassword,
+    profileAvatar,
     prn: requestPrn,
     studentPrn,
     childPrn
@@ -983,12 +982,13 @@ app.post('/api/auth/register', async (req, res, next) => {
         }
 
         // Auto-create parent user if student registration
+        // Parent password is auto-generated as 'Parent@123' — no user input required
         let parentUser = null;
         if (role === 'student' && parentEmail) {
           const normParentEmail = parentEmail.toLowerCase().trim();
           const existingParent = await User.findOne({ email: normParentEmail });
           if (!existingParent) {
-            const hashedParentPassword = await bcrypt.hash(parentPassword || 'password123', 10);
+            const hashedParentPassword = await bcrypt.hash('Parent@123', 10);
             parentUser = await User.create({
               name: parentName || 'Parent of ' + name,
               email: normParentEmail,
@@ -1013,7 +1013,7 @@ app.post('/api/auth/register', async (req, res, next) => {
           invoiceUrl,
           paymentStatus,
           prn: role === 'student' ? studentPrnString : undefined,
-          phone: role === 'student' ? phone : undefined,
+          profileAvatar: role === 'student' ? (profileAvatar || 'avatar1') : undefined,
           parentId: parentUser ? parentUser._id : undefined,
           linkedStudentId: studentToLink ? studentToLink._id : undefined,
           linkedStudents: studentToLink ? [studentToLink._id] : [],
@@ -1059,7 +1059,7 @@ app.post('/api/auth/register', async (req, res, next) => {
         invoiceUrl: isPaid ? `/public/invoices/virtual_mock.pdf` : undefined,
         paymentStatus: isPaid ? 'Paid' : 'Pending',
         prn: fallbackPrn,
-        phone: role === 'student' ? phone : undefined,
+        profileAvatar: role === 'student' ? (profileAvatar || 'avatar1') : undefined,
         linkedStudentId: role === 'parent' ? 'u_student' : undefined,
         linkedStudents: role === 'parent' ? ['u_student'] : [],
         status: role === 'teacher' ? 'pending' : 'active'
@@ -1085,7 +1085,7 @@ app.post('/api/auth/register', async (req, res, next) => {
         invoiceUrl: newUser.invoiceUrl,
         invoiceId: newUser.invoiceId,
         prn: newUser.prn,
-        phone: newUser.phone,
+        profileAvatar: newUser.profileAvatar,
         status: newUser.status
       }
     });
@@ -1096,12 +1096,18 @@ app.post('/api/auth/register', async (req, res, next) => {
 
 // Authentication: Login
 app.post('/api/auth/login', async (req, res, next) => {
-  const { email, password, prn, phone } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Please provide email and password.' });
+  const { email, password, prn } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Please provide your email address.' });
   }
 
   const normalizedEmail = email.toLowerCase().trim();
+  const normalizedPrn = (prn || '').toUpperCase().trim();
+
+  // Parent login: email + child PRN (no password required)
+  // All other roles: email + password required
+  // We determine the role after finding the user, so defer password check below.
 
   // Define static fallback users for demo/testing when DB is offline
   const mockUsersData = [
@@ -1121,7 +1127,15 @@ app.post('/api/auth/login', async (req, res, next) => {
       try {
         user = await User.findOne({ email: normalizedEmail });
         if (user) {
-          isMatch = await bcrypt.compare(password, user.password);
+          if (user.role === 'parent') {
+            // Parents authenticate via email + child PRN — no password check
+            isMatch = true;
+          } else {
+            if (!password) {
+              return res.status(400).json({ error: 'Please provide your password.' });
+            }
+            isMatch = await bcrypt.compare(password, user.password);
+          }
         }
       } catch (dbErr) {
         console.warn('[DATABASE WARNING] Auth DB query failed. Falling back to demo mock users.', dbErr.message);
@@ -1133,28 +1147,34 @@ app.post('/api/auth/login', async (req, res, next) => {
     // Fallback to static mock users
     if (!user) {
       const mockUser = mockUsersData.find(u => u.email === normalizedEmail);
-      if (mockUser && password === 'password123') {
-        user = mockUser;
-        isMatch = true;
+      if (mockUser) {
+        if (mockUser.role === 'parent') {
+          // Parent fallback: just check email matches
+          user = mockUser;
+          isMatch = true;
+        } else if (password === 'password123') {
+          user = mockUser;
+          isMatch = true;
+        }
       }
     }
 
     if (!user || !isMatch) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
+      return res.status(401).json({ error: 'Invalid email or credentials.' });
     }
 
     if (user.status === 'pending') {
       return res.status(403).json({ error: 'Teacher account is pending admin approval.' });
     }
 
-    // Parent PRN validation and student profile link
+    // Parent: validate by child PRN (email + PRN auth — no password)
     if (user.role === 'parent') {
-      if (!prn) {
+      if (!normalizedPrn) {
         return res.status(400).json({ error: "Child's PRN number is required for parent login." });
       }
       
       if (mongoose.connection.readyState === 1) {
-        const student = await User.findOne({ prn: prn.toUpperCase().trim(), role: 'student' });
+        const student = await User.findOne({ prn: normalizedPrn, role: 'student' });
         if (!student) {
           return res.status(400).json({ error: "No student found with the provided PRN number." });
         }
