@@ -21,6 +21,14 @@ import { AnalysisInsights } from './views/Student/AnalysisInsights';
 import { LearningView } from './views/Student/LearningView';
 import { Joyride, Step } from 'react-joyride';
 
+// Student Placeholders
+import { StudentOverview } from './views/Student/StudentOverview';
+import { TestArena } from './views/Student/TestArena';
+import { StudentAnalysis } from './views/Student/StudentAnalysis';
+import { StudentAdaptive } from './views/Student/StudentAdaptive';
+import { StudentLearning } from './views/Student/StudentLearning';
+import { StudentSettings } from './views/Student/StudentSettings';
+
 // Joyride step configuration definitions
 const joyrideSteps: Step[] = [
   {
@@ -58,12 +66,85 @@ const joyrideSteps: Step[] = [
 
 const AppContent: React.FC = () => {
   const { activeUser, runTour, setRunTour } = useLms();
-  const [currentTab, setCurrentTab] = useState<string>('student-overview');
   const [selectedAttemptIdForFeedback, setSelectedAttemptIdForFeedback] = useState<string | undefined>(undefined);
 
-  // Set default tabs based on active user role changes
+  // Initialize currentTab based on URL pathname
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    const path = window.location.pathname;
+    const pathToTab: Record<string, string> = {
+      '/student/overview': 'student-overview',
+      '/student/test-arena': 'student-tests',
+      '/student/analysis': 'student-analysis',
+      '/student/ai-learning': 'student-adaptive',
+      '/student/learning': 'student-learning',
+      '/student/settings': 'student-settings',
+      '/admin/performance': 'admin-performance',
+      '/admin/users': 'admin-users',
+      '/admin/settings': 'admin-settings',
+      '/parent/performance': 'parent-performance',
+      '/parent/diagnostics': 'parent-diagnostics',
+      '/parent/ranking': 'parent-ranking',
+      '/teacher/dashboard': 'teacher-dashboard',
+      '/teacher/tracking': 'teacher-tracking',
+      '/teacher/generator': 'teacher-generator',
+      '/teacher/materials': 'teacher-materials',
+      '/teacher/feedback': 'teacher-feedback',
+      '/executive/analytics': 'executive-dashboard',
+      '/executive/finance': 'executive-finance',
+      '/executive/acquisition': 'executive-acquisition',
+      '/executive/health': 'executive-health',
+    };
+    return pathToTab[path] || 'student-overview';
+  });
+
+  // Set default tabs or restore current URL tab based on active user role changes
   useEffect(() => {
     if (activeUser) {
+      const path = window.location.pathname;
+      const pathToTab: Record<string, string> = {
+        '/student/overview': 'student-overview',
+        '/student/test-arena': 'student-tests',
+        '/student/analysis': 'student-analysis',
+        '/student/ai-learning': 'student-adaptive',
+        '/student/learning': 'student-learning',
+        '/student/settings': 'student-settings',
+        '/admin/performance': 'admin-performance',
+        '/admin/users': 'admin-users',
+        '/admin/settings': 'admin-settings',
+        '/parent/performance': 'parent-performance',
+        '/parent/diagnostics': 'parent-diagnostics',
+        '/parent/ranking': 'parent-ranking',
+        '/teacher/dashboard': 'teacher-dashboard',
+        '/teacher/tracking': 'teacher-tracking',
+        '/teacher/generator': 'teacher-generator',
+        '/teacher/materials': 'teacher-materials',
+        '/teacher/feedback': 'teacher-feedback',
+        '/executive/analytics': 'executive-dashboard',
+        '/executive/finance': 'executive-finance',
+        '/executive/acquisition': 'executive-acquisition',
+        '/executive/health': 'executive-health',
+      };
+      
+      if (pathToTab[path]) {
+        const isStudentPath = path.startsWith('/student');
+        const isAdminPath = path.startsWith('/admin');
+        const isParentPath = path.startsWith('/parent');
+        const isTeacherPath = path.startsWith('/teacher');
+        const isExecutivePath = path.startsWith('/executive');
+        
+        if (
+          (activeUser.role === 'student' && isStudentPath) ||
+          (activeUser.role === 'admin' && isAdminPath) ||
+          (activeUser.role === 'parent' && isParentPath) ||
+          (activeUser.role === 'teacher' && isTeacherPath) ||
+          (activeUser.role === 'executive' && isExecutivePath)
+        ) {
+          setCurrentTab(pathToTab[path]);
+          return;
+        }
+      }
+
+      // Default role tabs if path is empty/invalid
       if (activeUser.role === 'student') {
         setCurrentTab('student-overview');
       } else if (activeUser.role === 'admin') {
@@ -78,6 +159,87 @@ const AppContent: React.FC = () => {
     }
   }, [activeUser]);
 
+  // Listen to popstate (back/forward browser buttons)
+  useEffect(() => {
+    const pathToTab: Record<string, string> = {
+      '/student/overview': 'student-overview',
+      '/student/test-arena': 'student-tests',
+      '/student/analysis': 'student-analysis',
+      '/student/ai-learning': 'student-adaptive',
+      '/student/learning': 'student-learning',
+      '/student/settings': 'student-settings',
+      '/admin/performance': 'admin-performance',
+      '/admin/users': 'admin-users',
+      '/admin/settings': 'admin-settings',
+      '/parent/performance': 'parent-performance',
+      '/parent/diagnostics': 'parent-diagnostics',
+      '/parent/ranking': 'parent-ranking',
+      '/teacher/dashboard': 'teacher-dashboard',
+      '/teacher/tracking': 'teacher-tracking',
+      '/teacher/generator': 'teacher-generator',
+      '/teacher/materials': 'teacher-materials',
+      '/teacher/feedback': 'teacher-feedback',
+      '/executive/analytics': 'executive-dashboard',
+      '/executive/finance': 'executive-finance',
+      '/executive/acquisition': 'executive-acquisition',
+      '/executive/health': 'executive-health',
+    };
+
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const matchedTab = pathToTab[path];
+      if (matchedTab && matchedTab !== currentTab) {
+        setCurrentTab(matchedTab);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentTab]);
+
+  // Sync tab changes to URL pathname
+  useEffect(() => {
+    if (!activeUser) return;
+    const tabToPath: Record<string, string> = {
+      'student-overview': '/student/overview',
+      'student-dashboard': '/student/overview',
+      'student-tests': '/student/test-arena',
+      'student-analysis': '/student/analysis',
+      'student-adaptive': '/student/ai-learning',
+      'student-learning': '/student/learning',
+      'student-settings': '/student/settings',
+      'admin-dashboard': '/admin/performance',
+      'admin-performance': '/admin/performance',
+      'admin-users': '/admin/users',
+      'admin-settings': '/admin/settings',
+      'parent-dashboard': '/parent/performance',
+      'parent-performance': '/parent/performance',
+      'parent-diagnostics': '/parent/diagnostics',
+      'parent-ranking': '/parent/ranking',
+      'teacher-dashboard': '/teacher/dashboard',
+      'teacher-tracking': '/teacher/tracking',
+      'teacher-generator': '/teacher/generator',
+      'teacher-materials': '/teacher/materials',
+      'teacher-feedback': '/teacher/feedback',
+      'executive-dashboard': '/executive/analytics',
+      'executive-finance': '/executive/finance',
+      'executive-acquisition': '/executive/acquisition',
+      'executive-health': '/executive/health',
+    };
+
+    const targetPath = tabToPath[currentTab];
+    if (targetPath && window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
+  }, [currentTab, activeUser]);
+
+  // Clear path on logout
+  useEffect(() => {
+    if (!activeUser && window.location.pathname !== '/') {
+      window.history.pushState(null, '', '/');
+    }
+  }, [activeUser]);
+
   if (!activeUser) {
     return <LandingPage />;
   }
@@ -87,17 +249,19 @@ const AppContent: React.FC = () => {
       // Student Portal
       case 'student-overview':
       case 'student-dashboard': // backwards compatibility
-        return <StudentDashboard setCurrentTab={setCurrentTab} />;
+        return <StudentOverview />;
       case 'student-materials':
         return <StudentMaterials />;
       case 'student-tests':
-        return <MockTestEngine />;
+        return <TestArena />;
       case 'student-analysis':
-        return <AnalysisInsights />;
+        return <StudentAnalysis />;
       case 'student-learning':
-        return <LearningView />;
+        return <StudentLearning />;
       case 'student-adaptive':
-        return <AdaptiveQuiz />;
+        return <StudentAdaptive />;
+      case 'student-settings':
+        return <StudentSettings />;
       case 'student-notes':
         return <NotesApp />;
 

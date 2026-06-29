@@ -59,16 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           className={`sidebar-link btn-block ${currentTab === 'student-tests' ? 'active' : ''}`}
         >
           <FileText size={18} />
-          <span>Mocktest</span>
-        </button>
-      </li>
-      <li className="sidebar-item">
-        <button
-          onClick={() => handleTabClick('student-adaptive')}
-          className={`sidebar-link btn-block ${currentTab === 'student-adaptive' ? 'active' : ''}`}
-        >
-          <Brain size={18} style={{ color: currentTab === 'student-adaptive' ? '#09090b' : 'var(--lime-accent)' }} />
-          <span>AI Adaptive Learning</span>
+          <span>Test Arena</span>
         </button>
       </li>
       <li className="sidebar-item">
@@ -80,9 +71,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Zap size={18} style={{ color: activeUser.plan === 'Free' ? '#94a3b8' : (currentTab === 'student-analysis' ? '#09090b' : 'var(--lime-accent)') }} />
-            <span>Analysis / AI Insights</span>
+            <span>Analysis & AI Insights</span>
           </div>
           {activeUser.plan === 'Free' && <Lock size={14} style={{ color: '#94a3b8', opacity: 0.8 }} />}
+        </button>
+      </li>
+      <li className="sidebar-item">
+        <button
+          onClick={() => handleTabClick('student-adaptive')}
+          className={`sidebar-link btn-block ${currentTab === 'student-adaptive' ? 'active' : ''}`}
+        >
+          <Brain size={18} style={{ color: currentTab === 'student-adaptive' ? '#09090b' : 'var(--lime-accent)' }} />
+          <span>AI Adaptive Learning</span>
         </button>
       </li>
       <li className="sidebar-item">
@@ -97,6 +97,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
             <span>Learning</span>
           </div>
           {activeUser.plan === 'Free' && <Lock size={14} style={{ color: '#94a3b8', opacity: 0.8 }} />}
+        </button>
+      </li>
+      <li className="sidebar-item">
+        <button
+          onClick={() => handleTabClick('student-settings')}
+          className={`sidebar-link btn-block ${currentTab === 'student-settings' ? 'active' : ''}`}
+        >
+          <Settings size={18} />
+          <span>Settings</span>
         </button>
       </li>
       {activeUser.plan !== 'Free' && activeUser.invoiceUrl && (

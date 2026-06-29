@@ -2054,6 +2054,166 @@ app.post('/api/ai/log-usage', authMiddleware, async (req, res, next) => {
   }
 });
 
+// GET Student Overview Data
+app.get('/api/student/overview-data', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Student user not found.' });
+    }
+
+    // 1. Calculate average accuracy dynamically from test attempts
+    const attempts = await TestAttempt.find({ student_id: req.user.id });
+    let accuracy = 37; // default fallback if no attempts
+    if (attempts.length > 0) {
+      const sum = attempts.reduce((acc, att) => acc + att.accuracy, 0);
+      accuracy = Math.round(sum / attempts.length);
+    }
+
+    // 2. Fetch or seed calendar events
+    let events = await CalendarEvent.find({});
+    if (events.length === 0) {
+      events = await CalendarEvent.create([
+        { title: 'Full Syllabus Mock Test #3', date: 'July 02, 2026', type: 'Test', subject: 'General' },
+        { title: 'Chemistry Doubt Clearing Live', date: 'July 05, 2026', type: 'Lecture', subject: 'Chemistry' },
+        { title: 'Chapter Drill: Integration math', date: 'July 08, 2026', type: 'Test', subject: 'Mathematics' },
+        { title: 'Physics Formula Revise Check', date: 'July 10, 2026', type: 'Lecture', subject: 'Physics' },
+        { title: 'Calculus Advanced Challenge', date: 'July 15, 2026', type: 'Test', subject: 'Mathematics' }
+      ]);
+    }
+
+    // 3. Compute dynamic syllabus tracking progress from AI adaptive tests & attempts
+    const physicsChaptersList = ['Rotational Dynamics', 'Electrostatics', 'Wave Optics', 'Oscillations'];
+    const chemistryChaptersList = ['Chemical Kinetics', 'Coordination Compounds', 'Thermodynamics', 'Solid State'];
+    const mathChaptersList = ['Vectors', 'Integration', 'Probability', 'Trigonometric Functions'];
+
+    const chapterStats = {};
+
+    attempts.forEach(attempt => {
+      if (attempt.responses && Array.isArray(attempt.responses)) {
+        attempt.responses.forEach(resp => {
+          const chap = resp.chapter;
+          const isCorr = resp.isCorrect;
+          if (chap) {
+            let normChap = chap.trim();
+            if (normChap.toLowerCase().includes('vector')) normChap = 'Vectors';
+            if (normChap.toLowerCase().includes('integration')) normChap = 'Integration';
+            if (normChap.toLowerCase().includes('probability')) normChap = 'Probability';
+
+            if (!chapterStats[normChap]) {
+              chapterStats[normChap] = { correct: 0, total: 0 };
+            }
+            chapterStats[normChap].total++;
+            if (isCorr) {
+              chapterStats[normChap].correct++;
+            }
+          }
+        });
+      }
+    });
+
+    const getMasteredCount = (chaptersList, userStrong) => {
+      let mastered = 0;
+      chaptersList.forEach(ch => {
+        const stats = chapterStats[ch];
+        if (stats && stats.total > 0) {
+          const acc = (stats.correct / stats.total) * 100;
+          if (acc >= 70) {
+            mastered++;
+          }
+        } else if (userStrong && userStrong.some(s => s.toLowerCase().includes(ch.toLowerCase()) || ch.toLowerCase().includes(s.toLowerCase()))) {
+          mastered++;
+        }
+      });
+      return mastered;
+    };
+
+    const physicsChapters = getMasteredCount(physicsChaptersList, user.strongTopics || []);
+    const chemistryChapters = getMasteredCount(chemistryChaptersList, user.strongTopics || []);
+    const mathChapters = getMasteredCount(mathChaptersList, user.strongTopics || []);
+
+    res.json({
+      name: user.name,
+      email: user.email,
+      prn: user.prn || 'MHT202684730',
+      billingId: user.invoiceId || 'INV-1782305377435-7748',
+      plan: user.plan || 'Free',
+      accuracyIndex: accuracy,
+      streak: user.streak || 0,
+      hoursStudied: user.hoursStudied || 0,
+      tasks: user.tasks.map(t => ({ id: t._id, text: t.text, completed: t.completed })),
+      upcomingEvents: events.map(e => ({
+        id: e._id,
+        title: e.title,
+        date: e.date,
+        time: '10:00 AM',
+        type: e.type.toLowerCase()
+      })),
+      syllabusProgress: {
+        physics: { mastered: physicsChapters, total: 4, percentage: Math.round((physicsChapters / 4) * 100) },
+        chemistry: { mastered: chemistryChapters, total: 4, percentage: Math.round((chemistryChapters / 4) * 100) },
+        math: { mastered: mathChapters, total: 3, percentage: Math.round((mathChapters / 3) * 100) }
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST Add student task
+app.post('/api/student/tasks', authMiddleware, async (req, res, next) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: 'Task text is required.' });
+    }
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    user.tasks.push({ text, completed: false });
+    await user.save();
+    const newTask = user.tasks[user.tasks.length - 1];
+    res.status(201).json({ id: newTask._id, text: newTask.text, completed: newTask.completed });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT Toggle student task
+app.put('/api/student/tasks/:taskId/toggle', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    const task = user.tasks.id(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found.' });
+    }
+    task.completed = !task.completed;
+    await user.save();
+    res.json({ id: task._id, text: task.text, completed: task.completed });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE Student task
+app.delete('/api/student/tasks/:taskId', authMiddleware, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    user.tasks.pull(req.params.taskId);
+    await user.save();
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Register parent account (Student only)
 app.post('/api/student/register-parent', authMiddleware, async (req, res, next) => {
   try {
