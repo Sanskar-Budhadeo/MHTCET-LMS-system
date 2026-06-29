@@ -2054,83 +2054,144 @@ app.post('/api/ai/log-usage', authMiddleware, async (req, res, next) => {
   }
 });
 
-// GET Student Overview Data
-app.get('/api/student/overview-data', authMiddleware, async (req, res, next) => {
+// GET Student Dashboard Controller
+const getDashboardData = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Student user not found.' });
     }
 
-    // 1. Calculate average accuracy dynamically from test attempts
-    const attempts = await TestAttempt.find({ student_id: req.user.id });
-    let accuracy = 37; // default fallback if no attempts
+    // Helpers
+    const formatLocalDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    // 1. Activity Streak Logic
+    const today = new Date();
+    const todayStr = formatLocalDate(today);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatLocalDate(yesterday);
+
+    let streakUpdated = false;
+    if (!user.loginDates.includes(todayStr)) {
+      if (user.loginDates.includes(yesterdayStr)) {
+        user.streak = (user.streak || 0) + 1;
+      } else {
+        user.streak = 1;
+      }
+      user.loginDates.push(todayStr);
+      user.streaks = user.streak; // Keep streaks field in sync
+      streakUpdated = true;
+    }
+
+    // 2-5. Fetch/Calculate metrics concurrently
+    const [savedUser, allEvents, subjectProgressAgg, peerRanks, attempts] = await Promise.all([
+      streakUpdated ? user.save() : Promise.resolve(user),
+      CalendarEvent.find({}),
+      TestAttempt.aggregate([
+        {
+          $match: {
+            _id: { $in: user.testProgress || [] }
+          }
+        },
+        { $unwind: '$responses' },
+        {
+          $group: {
+            _id: '$responses.subject',
+            correctCount: {
+              $sum: {
+                $cond: [{ $eq: ['$responses.isCorrect', true] }, 1, 0]
+              }
+            },
+            totalQuestions: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            subject: '$_id',
+            correctCount: 1,
+            totalQuestions: 1,
+            masteryPercentage: {
+              $cond: [
+                { $eq: ['$totalQuestions', 0] },
+                0,
+                { $multiply: [{ $divide: ['$correctCount', '$totalQuestions'] }, 100] }
+              ]
+            }
+          }
+        }
+      ]),
+      TestAttempt.aggregate([
+        {
+          $group: {
+            _id: '$student_id',
+            totalScore: { $sum: '$score' }
+          }
+        },
+        { $sort: { totalScore: -1 } }
+      ]),
+      TestAttempt.find({ student_id: user._id.toString() })
+    ]);
+
+    // Calendar Filtering and Sorting (>= today's date string comparison using parsed JS dates for robustness)
+    const parsedToday = new Date();
+    parsedToday.setHours(0, 0, 0, 0);
+
+    const upcomingEvents = allEvents
+      .filter(e => {
+        const eventDate = new Date(e.date);
+        return eventDate >= parsedToday;
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 3);
+
+    // Subject-wise progress mapping
+    const syllabusProgress = {
+      physics: { mastered: 0, total: 0, percentage: 0 },
+      chemistry: { mastered: 0, total: 0, percentage: 0 },
+      math: { mastered: 0, total: 0, percentage: 0 }
+    };
+
+    subjectProgressAgg.forEach(item => {
+      const subj = (item.subject || '').toLowerCase();
+      const pct = Math.round(item.masteryPercentage || 0);
+      if (subj === 'physics') {
+        syllabusProgress.physics = {
+          mastered: item.correctCount,
+          total: item.totalQuestions,
+          percentage: pct
+        };
+      } else if (subj === 'chemistry') {
+        syllabusProgress.chemistry = {
+          mastered: item.correctCount,
+          total: item.totalQuestions,
+          percentage: pct
+        };
+      } else if (subj === 'mathematics' || subj === 'math') {
+        syllabusProgress.math = {
+          mastered: item.correctCount,
+          total: item.totalQuestions,
+          percentage: pct
+        };
+      }
+    });
+
+    // Accuracy Calculation
+    let accuracy = 37;
     if (attempts.length > 0) {
       const sum = attempts.reduce((acc, att) => acc + att.accuracy, 0);
       accuracy = Math.round(sum / attempts.length);
     }
 
-    // 2. Fetch or seed calendar events
-    let events = await CalendarEvent.find({});
-    if (events.length === 0) {
-      events = await CalendarEvent.create([
-        { title: 'Full Syllabus Mock Test #3', date: 'July 02, 2026', type: 'Test', subject: 'General' },
-        { title: 'Chemistry Doubt Clearing Live', date: 'July 05, 2026', type: 'Lecture', subject: 'Chemistry' },
-        { title: 'Chapter Drill: Integration math', date: 'July 08, 2026', type: 'Test', subject: 'Mathematics' },
-        { title: 'Physics Formula Revise Check', date: 'July 10, 2026', type: 'Lecture', subject: 'Physics' },
-        { title: 'Calculus Advanced Challenge', date: 'July 15, 2026', type: 'Test', subject: 'Mathematics' }
-      ]);
-    }
-
-    // 3. Compute dynamic syllabus tracking progress from AI adaptive tests & attempts
-    const physicsChaptersList = ['Rotational Dynamics', 'Electrostatics', 'Wave Optics', 'Oscillations'];
-    const chemistryChaptersList = ['Chemical Kinetics', 'Coordination Compounds', 'Thermodynamics', 'Solid State'];
-    const mathChaptersList = ['Vectors', 'Integration', 'Probability', 'Trigonometric Functions'];
-
-    const chapterStats = {};
-
-    attempts.forEach(attempt => {
-      if (attempt.responses && Array.isArray(attempt.responses)) {
-        attempt.responses.forEach(resp => {
-          const chap = resp.chapter;
-          const isCorr = resp.isCorrect;
-          if (chap) {
-            let normChap = chap.trim();
-            if (normChap.toLowerCase().includes('vector')) normChap = 'Vectors';
-            if (normChap.toLowerCase().includes('integration')) normChap = 'Integration';
-            if (normChap.toLowerCase().includes('probability')) normChap = 'Probability';
-
-            if (!chapterStats[normChap]) {
-              chapterStats[normChap] = { correct: 0, total: 0 };
-            }
-            chapterStats[normChap].total++;
-            if (isCorr) {
-              chapterStats[normChap].correct++;
-            }
-          }
-        });
-      }
-    });
-
-    const getMasteredCount = (chaptersList, userStrong) => {
-      let mastered = 0;
-      chaptersList.forEach(ch => {
-        const stats = chapterStats[ch];
-        if (stats && stats.total > 0) {
-          const acc = (stats.correct / stats.total) * 100;
-          if (acc >= 70) {
-            mastered++;
-          }
-        } else if (userStrong && userStrong.some(s => s.toLowerCase().includes(ch.toLowerCase()) || ch.toLowerCase().includes(s.toLowerCase()))) {
-          mastered++;
-        }
-      });
-      return mastered;
-    };
-
-    const physicsChapters = getMasteredCount(physicsChaptersList, user.strongTopics || []);
-    const chemistryChapters = getMasteredCount(chemistryChaptersList, user.strongTopics || []);
-    const mathChapters = getMasteredCount(mathChaptersList, user.strongTopics || []);
+    // Rank Calculation
+    const currentUserStringId = user._id.toString();
+    const currentRankIndex = peerRanks.findIndex(item => item._id === currentUserStringId);
+    const rank = currentRankIndex !== -1 ? currentRankIndex + 1 : peerRanks.length + 1;
 
     res.json({
       name: user.name,
@@ -2142,19 +2203,123 @@ app.get('/api/student/overview-data', authMiddleware, async (req, res, next) => 
       streak: user.streak || 0,
       hoursStudied: user.hoursStudied || 0,
       tasks: user.tasks.map(t => ({ id: t._id, text: t.text, completed: t.completed })),
-      upcomingEvents: events.map(e => ({
+      upcomingEvents: upcomingEvents.map(e => ({
         id: e._id,
         title: e.title,
         date: e.date,
         time: '10:00 AM',
         type: e.type.toLowerCase()
       })),
-      syllabusProgress: {
-        physics: { mastered: physicsChapters, total: 4, percentage: Math.round((physicsChapters / 4) * 100) },
-        chemistry: { mastered: chemistryChapters, total: 4, percentage: Math.round((chemistryChapters / 4) * 100) },
-        math: { mastered: mathChapters, total: 3, percentage: Math.round((mathChapters / 3) * 100) }
-      }
+      syllabusProgress,
+      rank
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET Student Overview Data endpoint
+app.get('/api/student/overview-data', authMiddleware, getDashboardData);
+
+// GET Test Arena Dashboard Data endpoint
+app.get('/api/test-arena/dashboard/:userId', authMiddleware, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    if (mongoose.connection.readyState === 1) {
+      // Execute mockTest find and testAttempt find queries concurrently
+      const [mockTests, testAttempts] = await Promise.all([
+        MockTest.find({ isPublished: true }).sort({ scheduledTime: 1 }),
+        TestAttempt.find({ student_id: userId }).sort({ createdAt: -1 }).limit(5)
+      ]);
+
+      res.json({
+        availableTests: mockTests.map(t => ({
+          id: t._id,
+          title: t.name,
+          duration: t.duration,
+          subjects: t.subjects,
+          scheduledTime: t.scheduledTime
+        })),
+        pastResults: testAttempts.map(a => ({
+          id: a._id,
+          testName: a.test_name,
+          score: a.score,
+          totalMarks: a.max_score,
+          dateAttempted: a.createdAt,
+          accuracy: a.accuracy
+        }))
+      ]);
+    } else {
+      // Offline fallback when database connection is not established
+      res.json({
+        availableTests: [
+          {
+            id: 'mock_test_1',
+            title: 'MHT-CET Full Syllabus Mock Test #4',
+            duration: 180,
+            subjects: ['Physics', 'Chemistry', 'Mathematics'],
+            scheduledTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 1 day in future
+          },
+          {
+            id: 'mock_test_2',
+            title: 'Mathematics: Vector Algebra & Calculus',
+            duration: 90,
+            subjects: ['Mathematics'],
+            scheduledTime: new Date(Date.now() - 60 * 60 * 1000).toISOString() // 1 hour ago
+          },
+          {
+            id: 'mock_test_3',
+            title: 'Physics & Chemistry: Organic Mechanics & Optics',
+            duration: 90,
+            subjects: ['Physics', 'Chemistry'],
+            scheduledTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() // 2 days in future
+          }
+        ],
+        pastResults: [
+          {
+            id: 'past_attempt_1',
+            testName: 'MHT-CET Full Syllabus Mock Test #3',
+            score: 148,
+            totalMarks: 200,
+            dateAttempted: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 74
+          },
+          {
+            id: 'past_attempt_2',
+            testName: 'Mathematics Chapter Drill: Vectors',
+            score: 82,
+            totalMarks: 100,
+            dateAttempted: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 82
+          },
+          {
+            id: 'past_attempt_3',
+            testName: 'Chemistry Practical: Kinetic Formulas',
+            score: 76,
+            totalMarks: 100,
+            dateAttempted: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 76
+          },
+          {
+            id: 'past_attempt_4',
+            testName: 'Physics Standard: Electrostatics Drill #2',
+            score: 41,
+            totalMarks: 50,
+            dateAttempted: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 82
+          },
+          {
+            id: 'past_attempt_5',
+            testName: 'MHT-CET Full Syllabus Mock Test #2',
+            score: 124,
+            totalMarks: 200,
+            dateAttempted: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 62
+          }
+        ]
+      });
+    }
   } catch (err) {
     next(err);
   }
