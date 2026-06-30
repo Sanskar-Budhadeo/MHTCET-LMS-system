@@ -43,7 +43,8 @@ export const StudentAnalysis: React.FC = () => {
 
   const { activeUser, attempts, questions } = useLms();
 
-  const realAttempts = attempts.filter(att => 
+  const realAttempts = (attempts || []).filter(att => 
+    att &&
     att.id !== 'past_attempt_1' && 
     att.id !== 'past_attempt_2' && 
     att.testName !== 'MHT-CET Rotational Dynamics Practice Quiz'
@@ -54,7 +55,10 @@ export const StudentAnalysis: React.FC = () => {
 
   // Compile dynamic stats
   const avgAccuracy = !isDatabaseEmpty 
-    ? Math.round(realAttempts.reduce((sum, att) => sum + att.accuracy, 0) / totalAttemptsCount) 
+    ? Math.round(realAttempts.reduce((sum, att) => {
+        const acc = att.accuracy !== undefined ? att.accuracy : (att.max_score > 0 ? Math.round((att.score / att.max_score) * 100) : 0);
+        return sum + acc;
+      }, 0) / totalAttemptsCount) 
     : 0;
 
   const bestPercentile = !isDatabaseEmpty
@@ -460,7 +464,7 @@ export const StudentAnalysis: React.FC = () => {
           <div className="bg-zinc-900 text-amber-400 p-5 rounded-full border border-zinc-800">
             <AlertTriangle className="w-10 h-10" />
           </div>
-          <h2 className="text-xl font-bold text-white">No Performance Analytics Recorded</h2>
+          <h2 className="text-xl font-bold text-white">No tests attempted yet.</h2>
           <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
             AI syllabus diagnostics, speed indices, and conceptual weakness grids compile dynamically once you complete and submit an exam from the Test Arena.
           </p>

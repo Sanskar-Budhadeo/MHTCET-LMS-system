@@ -27,6 +27,7 @@ export interface TestAttempt {
   studentName?: string;
   subject?: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' | 'General';
   date: string;
+  createdAt?: string;
   score: number;
   maxScore: number;
   timeSpent: number; // in seconds
@@ -53,6 +54,7 @@ export interface MockTest {
 
 export interface UserProfile {
   id: string;
+  _id?: string;
   name: string;
   email: string;
   role: 'student' | 'parent' | 'admin' | 'teacher' | 'executive';

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, FileText, CheckCircle2, ChevronRight, MessageSquare, Sparkles, Brain, ArrowUpRight, Play, Send, X } from 'lucide-react';
 import { useLms } from '../../context/LmsContext';
+import axios from '../../axios';
 
 interface DailyPlanItem {
   id: string;
@@ -34,7 +35,7 @@ interface LectureVideo {
 }
 
 export const StudentLearning: React.FC = () => {
-  const { weakTopics } = useLms();
+  const { weakTopics, attempts, activeUser } = useLms();
   const [selectedPlanItem, setSelectedPlanItem] = useState<StudyPlanItem | null>(null);
   const [activeLectureVideo, setActiveLectureVideo] = useState<{ title: string; url: string } | null>(null);
 
@@ -63,6 +64,9 @@ export const StudentLearning: React.FC = () => {
   };
 
   const getDynamicVideos = (): LectureVideo[] => {
+    if (!attempts || attempts.length === 0) {
+      return [];
+    }
     const list: any[] = [];
     let idCounter = 1;
     
@@ -190,6 +194,9 @@ export const StudentLearning: React.FC = () => {
   }
 
   const getDailyStudyPlan = (): StudyPlanItem[] => {
+    if (!attempts || attempts.length === 0) {
+      return [];
+    }
     const topicsToInclude = weakTopics.length > 0 ? weakTopics : ['Rotational Dynamics', 'Chemical Kinetics', 'Vectors'];
     
     return topicsToInclude.map((topic, index) => {
@@ -294,12 +301,33 @@ export const StudentLearning: React.FC = () => {
   // Dynamic plans are now computed dynamically from active weakTopics in LMS Context
 
   // Institute Notes Interactive Checklist State
-  const [notes, setNotes] = useState<InstituteNote[]>([
-    { id: '1', title: 'Electrostatics Part 2: Gauss Law & Charge Spheres', author: 'Dr. R. K. Sen', completed: true, subject: 'Physics' },
-    { id: '2', title: 'Transition State Energy & Chemical Kinetics Equations', author: 'Prof. Mehta', completed: false, subject: 'Chemistry' },
-    { id: '3', title: 'Vector Algebra: Dot Products & Cross Product Derivations', author: 'Prof. Anand', completed: false, subject: 'Mathematics' },
-    { id: '4', title: 'Wave Optics: Slit Path Difference Derivations', author: 'Dr. R. K. Sen', completed: false, subject: 'Physics' }
-  ]);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(true);
+
+  useEffect(() => {
+    const fetchNotes = async () => {
+      try {
+        setLoadingNotes(true);
+        const token = localStorage.getItem('mht_cet_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await axios.get('http://localhost:5000/api/student/materials', { headers });
+        const mapped = response.data.map((m: any) => ({
+          id: m.id || m._id,
+          title: m.title,
+          author: m.author || 'Faculty Advisor',
+          completed: false,
+          subject: m.subject,
+          url: m.url || m.file_url || '#'
+        }));
+        setNotes(mapped);
+      } catch (err) {
+        console.error('Error fetching materials in student portal:', err);
+      } finally {
+        setLoadingNotes(false);
+      }
+    };
+    fetchNotes();
+  }, []);
 
   const toggleNote = (id: string) => {
     setNotes(prev => prev.map(note => note.id === id ? { ...note, completed: !note.completed } : note));
@@ -323,11 +351,15 @@ export const StudentLearning: React.FC = () => {
   ];
 
   // AI Tutor Chat State
-  const [messages, setMessages] = useState([
-    { sender: 'tutor', text: 'Hey Rahul! Ready to dive into Vector cross products today? Ask me any LaTeX equation problem.' },
-    { sender: 'user', text: 'Yes, explain the path logic of cross formulas.' },
-    { sender: 'tutor', text: 'Sure! For vectors \\vec{A} and \\vec{B}, the cross product is given by: \\vec{A} \\times \\vec{B} = ||\\vec{A}|| ||\\vec{B}|| \\sin(\\theta) \\hat{n}. Here, \\hat{n} is the unit vector perpendicular to the plane containing both vectors.' }
-  ]);
+  const [messages, setMessages] = useState<any[]>([]);
+
+  useEffect(() => {
+    const studentFirstName = activeUser?.name ? activeUser.name.split(' ')[0] : 'Student';
+    setMessages([
+      { sender: 'tutor', text: `Hey ${studentFirstName}! Ready to dive into your MHT-CET doubts today? Ask me any questions, or select a chapter formula topic to revise.` }
+    ]);
+  }, [activeUser]);
+
   const [inputMessage, setInputMessage] = useState('');
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -502,7 +534,7 @@ export const StudentLearning: React.FC = () => {
                   <p>For any system target, the path derivations are evaluated under initial boundary conditions. In the context of MHT-CET examinations, the derivations for paths are crucial for numerical calculations.</p>
                   <p className="font-bold text-zinc-900">2. Key Equation Forms</p>
                   <div className="bg-white p-4 rounded-xl border border-zinc-300 text-center font-mono font-bold text-base my-2">
-                    E = \oint \vec{D} \cdot d\vec{A} = q_{"{enclosed}"}
+                    {"E = \\oint \\vec{D} \\cdot d\\vec{A} = q_{enclosed}"}
                   </div>
                   <p>The enclosed charge represents the total integrated density value over the Gaussian surface area elements.</p>
                   <p className="font-bold text-zinc-900">3. Worked Practice Problem</p>
@@ -725,9 +757,12 @@ export const StudentLearning: React.FC = () => {
           ))}
 
           {getDailyStudyPlan().length === 0 && (
-            <p className="text-xs text-slate-400 py-4 w-full text-center">
-              No daily recommendations found. Go complete a mock test!
-            </p>
+            <div className="flex flex-col items-center justify-center p-8 bg-[#121214] border border-[#27272a] rounded-3xl w-full text-center">
+              <Sparkles className="w-8 h-8 text-[#e2fc5c] mb-3 animate-pulse" />
+              <p className="text-xs text-slate-400 font-medium">
+                AI recommendations will populate here as soon as you finish your diagnostic setup assessment.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -745,7 +780,19 @@ export const StudentLearning: React.FC = () => {
             </h2>
 
             <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#27272a transparent' }}>
-              {notes.map(note => (
+              {loadingNotes && (
+                <div className="text-xs text-zinc-500 text-center py-8 font-semibold animate-pulse">
+                  Loading shared materials from database...
+                </div>
+              )}
+              
+              {!loadingNotes && notes.length === 0 && (
+                <div className="text-xs text-zinc-500 text-center py-8 font-semibold">
+                  No materials published yet
+                </div>
+              )}
+
+              {!loadingNotes && notes.map(note => (
                 <div 
                   key={note.id}
                   className="flex items-center gap-4 p-4 bg-[#09090b] border border-zinc-900 rounded-2xl hover:border-zinc-700 transition-all"
@@ -796,28 +843,37 @@ export const StudentLearning: React.FC = () => {
             <h2 className="text-sm font-bold text-white flex items-center gap-2 border-b border-zinc-800 pb-3">
               <span>🗂️</span> Quick-Revision Flashcard Decks
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {subjectDecks.map(deck => (
-                <div 
-                  key={deck.id} 
-                  onClick={() => setSelectedFlashcardSubject(deck.subject as any)}
-                  className={`bg-[#121214] border border-[#27272a] border-l-4 ${deck.color} rounded-3xl p-6 shadow-md flex justify-between items-center hover:border-zinc-500 transition duration-300 cursor-pointer`}
-                >
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] font-black uppercase text-slate-500">{deck.subject}</span>
-                    <span className="text-xs font-bold text-white leading-snug flex items-center gap-1.5">
-                      <span>{deck.icon}</span> {deck.name}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-semibold mt-1">
-                      {subjectChapters[deck.subject]?.length || 0} Modules available
-                    </span>
+            {(!attempts || attempts.length === 0) ? (
+              <div className="flex flex-col items-center justify-center p-8 bg-[#121214] border border-[#27272a] rounded-3xl w-full text-center">
+                <Brain className="w-8 h-8 text-[#e2fc5c] mb-3 animate-pulse" />
+                <p className="text-xs text-slate-400 font-medium">
+                  AI recommendations will populate here as soon as you finish your diagnostic setup assessment.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {subjectDecks.map(deck => (
+                  <div 
+                    key={deck.id} 
+                    onClick={() => setSelectedFlashcardSubject(deck.subject as any)}
+                    className={`bg-[#121214] border border-[#27272a] border-l-4 ${deck.color} rounded-3xl p-6 shadow-md flex justify-between items-center hover:border-zinc-500 transition duration-300 cursor-pointer`}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase text-slate-500">{deck.subject}</span>
+                      <span className="text-xs font-bold text-white leading-snug flex items-center gap-1.5">
+                        <span>{deck.icon}</span> {deck.name}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-semibold mt-1">
+                        {subjectChapters[deck.subject]?.length || 0} Modules available
+                      </span>
+                    </div>
+                    <button className="bg-zinc-850 hover:bg-zinc-800 text-[#e2fc5c] p-2.5 rounded-xl border border-zinc-800 transition">
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button className="bg-zinc-850 hover:bg-zinc-800 text-[#e2fc5c] p-2.5 rounded-xl border border-zinc-800 transition">
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
@@ -939,6 +995,14 @@ export const StudentLearning: React.FC = () => {
               </div>
             </div>
           ))}
+          {getDynamicVideos().length === 0 && (
+            <div className="col-span-full flex flex-col items-center justify-center p-8 bg-[#121214] border border-[#27272a] rounded-3xl text-center w-full">
+              <Play className="w-8 h-8 text-[#e2fc5c] mb-3 animate-pulse" />
+              <p className="text-xs text-slate-400 font-medium">
+                AI recommendations will populate here as soon as you finish your diagnostic setup assessment.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

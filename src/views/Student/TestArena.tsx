@@ -19,6 +19,12 @@ interface AvailableTest {
   duration: number; // in minutes
   subjects: string[];
   scheduledTime: string; // ISO string
+  start_time?: string;
+  end_time?: string;
+  test_type?: string;
+  total_questions?: number;
+  questions?: any[];
+  subjectDetails?: any;
 }
 
 interface PastTestResult {
@@ -329,7 +335,12 @@ export const TestArena: React.FC = () => {
         const token = localStorage.getItem('mht_cet_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const userId = activeUser?.id || activeUser?._id || 'rahul_sharma';
-        const response = await axios.get(`http://localhost:5000/api/test-arena/dashboard/${userId}`, { headers });
+        
+        // Concurrent fetches from new student available-tests and existing dashboard endpoint
+        const [testsRes, response] = await Promise.all([
+          fetch('http://localhost:5000/api/student/available-tests', { headers }).then(r => r.json()).catch(() => []),
+          axios.get(`http://localhost:5000/api/test-arena/dashboard/${userId}`, { headers }).catch(() => ({ data: { pastResults: [], availableTests: [] } }))
+        ]);
         
         const fetchedResults = response.data.pastResults || [];
         const stored = localStorage.getItem('submitted_exams');
@@ -344,7 +355,21 @@ export const TestArena: React.FC = () => {
           } catch (e) {}
         }
 
-        setAvailableTests(response.data.availableTests || []);
+        // Merge traditional mock tests and new scheduled tests, ensuring uniqueness and correct exam targeting
+        const studentExam = activeUser?.targetExam || 'MHT-CET';
+        const scheduledTests = Array.isArray(testsRes) ? testsRes : [];
+        const traditionalTests = (response.data.availableTests || []).filter((t: any) => {
+          const titleUpper = (t.title || '').toUpperCase();
+          return titleUpper.includes(studentExam.toUpperCase());
+        });
+        const combinedTests = [...scheduledTests];
+        traditionalTests.forEach((t: any) => {
+          if (!combinedTests.some(ct => ct.id === t.id || ct.title === t.title)) {
+            combinedTests.push(t);
+          }
+        });
+
+        setAvailableTests(combinedTests);
         setPastResults(fetchedResults);
       } catch (err) {
         console.warn('Backend server offline or endpoint error. Falling back to local offline mock data.', err);
@@ -398,6 +423,20 @@ export const TestArena: React.FC = () => {
 
   // Click Handler for Active Mock Tests
   const handleStartExam = async (testId: string, testTitle: string) => {
+    // Check if the test is a scheduled test with questions loaded in availableTests
+    const matchedScheduled = availableTests.find(t => t.id === testId);
+    if (matchedScheduled && matchedScheduled.questions && matchedScheduled.questions.length > 0) {
+      setSelectedLobbyTest({
+        _id: matchedScheduled.id,
+        name: matchedScheduled.title,
+        duration: matchedScheduled.duration,
+        subjects: matchedScheduled.subjects,
+        questions: matchedScheduled.questions
+      });
+      setAgreedToTerms(false);
+      return;
+    }
+
     try {
       const token = localStorage.getItem('mht_cet_token');
       const response = await fetch('http://localhost:5000/api/tests', {
@@ -425,12 +464,31 @@ export const TestArena: React.FC = () => {
           name: matchedOffline.title,
           duration: matchedOffline.duration,
           subjects: matchedOffline.subjects,
-          isOffline: true
+          isOffline: !matchedOffline.questions || matchedOffline.questions.length === 0,
+          questions: matchedOffline.questions || []
         });
         setAgreedToTerms(false);
       }
     }
   };
+
+  const handleViewResults = (testTitle: string, testId: string) => {
+    // Find the attempt in pastResults
+    const attempt = pastResults.find(r => r.id === testId || r.testName === testTitle || r.testName.toLowerCase().replace(/\s+/g, '') === testTitle.toLowerCase().replace(/\s+/g, ''));
+    if (attempt) {
+      setTestResultSummary({
+        attemptId: attempt.id,
+        score: attempt.score,
+        maxScore: attempt.totalMarks,
+        accuracy: attempt.accuracy,
+        percentile: 85.5,
+        nationalRank: 125
+      });
+    } else {
+      alert('Could not find results log details locally. Please check "Previous Score Log & Results" on the right panel.');
+    }
+  };
+
 
   const beginActualExam = () => {
     if (!selectedLobbyTest) return;
@@ -822,12 +880,28 @@ export const TestArena: React.FC = () => {
           </h2>
           <div className={`flex flex-col gap-6 ${availableTests.length > 3 ? 'max-h-[580px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent' : ''}`}>
             {availableTests.map(test => {
-              const status = checkTimeStatus(test.scheduledTime);
+              const start = test.start_time ? new Date(test.start_time) : new Date(test.scheduledTime);
+              const end = test.end_time ? new Date(test.end_time) : new Date(start.getTime() + (test.duration || 180) * 60 * 1000);
+              
+              const isBeforeStart = currentTime < start;
+              const isBetween = currentTime >= start && currentTime <= end;
+              const isAfterEnd = currentTime > end;
+
               const isSubmitted = pastResults.some(result => {
                 const normResult = result.testName.toLowerCase().replace(/\s+/g, '').replace(/active/g, '').replace(/practice/g, '');
                 const normTest = test.title.toLowerCase().replace(/\s+/g, '').replace(/active/g, '').replace(/practice/g, '');
                 return normResult === normTest || result.id === test.id || result.testName === test.title;
               });
+
+              // Format date details
+              const formattedStart = start.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' @ ' + start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              
+              // Human readable test type
+              let testTypeLabel = 'Mock Test Series';
+              if (test.test_type === 'FULL_SYLLABUS') testTypeLabel = 'Full Syllabus Test';
+              else if (test.test_type === 'CHAPTER_WISE_PART_TEST') testTypeLabel = 'Chapter Part Test';
+              else if (test.test_type === 'SUBJECT_WISE_PART_TEST') testTypeLabel = 'Subject Part Test';
+
               return (
                 <div 
                   key={test.id} 
@@ -836,53 +910,85 @@ export const TestArena: React.FC = () => {
                   <div>
                     <div className="flex flex-wrap items-center gap-2.5 mb-3.5">
                       <span className="bg-[var(--bg-app)] border border-[var(--border)] text-[var(--text-main)] rounded-full px-3.5 py-1 text-[10px] font-bold">
-                        {test.subjects.join(' / ')}
+                        {test.subjects ? test.subjects.join(' / ') : 'General'}
                       </span>
                       <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold flex items-center gap-1">
                         <Clock className="w-3 h-3" /> {test.duration} Mins
                       </span>
                       <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold">
-                        {test.duration >= 180 ? '200' : '100'} Marks
+                        {test.total_questions || (test.questions ? test.questions.length : 50)} Qs
                       </span>
+                      <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold">
+                        {testTypeLabel}
+                      </span>
+                      {isBeforeStart && (
+                        <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold">
+                          Starts at {formattedStart}
+                        </span>
+                      )}
+                      {isBetween && !isSubmitted && (
+                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold animate-pulse">
+                          Live Now
+                        </span>
+                      )}
+                      {isAfterEnd && !isSubmitted && (
+                        <span className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-full px-3.5 py-1 text-[10px] font-bold">
+                          Ended
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-lg font-extrabold text-[var(--text-main)] leading-snug">
                       {test.title}
                     </h3>
+                    
+                    {test.subjectDetails && test.subjectDetails.chapters && test.subjectDetails.chapters.length > 0 && (
+                      <p className="text-xs text-sky-400 mt-2 font-semibold">
+                        Chapters: {test.subjectDetails.chapters.join(', ')}
+                      </p>
+                    )}
+                    
                     <p className="text-xs text-[var(--text-muted)] mt-2 leading-relaxed font-semibold">
-                      Complete simulated MHT-CET assessment drill evaluating speed, precision, and concept correctness.
+                      Complete evaluation test calculating overall speed, concept clarity, and correct marking.
                     </p>
                   </div>
                   
                   <div className="flex flex-col gap-4 border-t border-[var(--border)] pt-4">
                     <div className="flex justify-between items-center text-xs text-[var(--text-muted)] font-semibold">
                       <span className="flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4 text-[#e2fc5c]" /> {status.formattedDate}
+                        <Calendar className="w-4 h-4 text-[#e2fc5c]" /> Live Activation: {start.toLocaleDateString()}
                       </span>
-                      <span>Scheduled time: {status.formattedTime}</span>
+                      <span>Ends at: {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({end.toLocaleDateString()})</span>
                     </div>
                     
-                    <button 
-                      disabled={status.isFuture || isSubmitted}
-                      onClick={() => handleStartExam(test.id, test.title)}
-                      className={`w-full text-center py-3 rounded-2xl text-xs font-bold transition border flex items-center justify-center gap-2 ${
-                        isSubmitted
-                          ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400 cursor-not-allowed font-black'
-                          : status.isFuture 
-                            ? 'bg-[var(--bg-app)] border-[var(--border)] text-[var(--text-light)] cursor-not-allowed opacity-60' 
-                            : 'bg-[#e2fc5c] hover:bg-[#c4de32] text-[#09090b] border-transparent font-black shadow-md'
-                      }`}
-                    >
-                      {isSubmitted ? (
-                        <>
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                          <span>Test Submitted</span>
-                        </>
-                      ) : status.isFuture ? (
-                        `Starts at ${status.formattedTime}`
-                      ) : (
-                        'Start Exam'
-                      )}
-                    </button>
+                    {isBeforeStart ? (
+                      <button 
+                        disabled
+                        className="w-full text-center py-3 rounded-2xl text-xs font-bold transition border bg-[var(--bg-app)] border-[var(--border)] text-[var(--text-light)] cursor-not-allowed opacity-60"
+                      >
+                        Starts at {formattedStart}
+                      </button>
+                    ) : isBetween && !isSubmitted ? (
+                      <button 
+                        onClick={() => handleStartExam(test.id, test.title)}
+                        className="w-full text-center py-3 rounded-2xl text-xs font-black transition border bg-[#e2fc5c] hover:bg-[#c4de32] text-[#09090b] border-transparent shadow-md"
+                      >
+                        Start Test
+                      </button>
+                    ) : isSubmitted ? (
+                      <button 
+                        onClick={() => handleViewResults(test.title, test.id)}
+                        className="w-full text-center py-3 rounded-2xl text-xs font-black transition border bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20 shadow-sm"
+                      >
+                        View Results
+                      </button>
+                    ) : (
+                      <button 
+                        disabled
+                        className="w-full text-center py-3 rounded-2xl text-xs font-bold transition border bg-red-950/20 border-red-500/30 text-red-400 cursor-not-allowed"
+                      >
+                        Missed
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -943,7 +1049,7 @@ export const TestArena: React.FC = () => {
               <div className="flex flex-col items-center justify-center py-12 text-center bg-[var(--bg-card)] border border-[var(--border)] rounded-3xl p-6">
                 <ShieldAlert className="w-8 h-8 text-[var(--text-light)] mb-2" />
                 <p className="text-xs text-[var(--text-muted)] font-semibold">
-                  No exams attempted yet.
+                  No tests attempted yet.
                 </p>
               </div>
             )}

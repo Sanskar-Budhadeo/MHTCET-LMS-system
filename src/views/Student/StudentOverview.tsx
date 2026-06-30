@@ -84,6 +84,7 @@ interface DashboardData {
   };
   rank: number;
   loginDates?: string[];
+  weeklyActivityList?: any[];
 }
 
 // ----------------------------------------------------
@@ -211,7 +212,7 @@ export const WeeklyHoursChart: React.FC<WeeklyHoursChartProps> = ({ hoursStudied
     // Calculate weights based on logins & days
     const weights = days.map(d => {
       const isToday = d.dateStr === new Date().toISOString().split('T')[0];
-      const isLoginDay = loginDates.includes(d.dateStr);
+      const isLoginDay = (loginDates || []).includes(d.dateStr);
       if (isToday) return 1.5;
       if (isLoginDay) return 1.0;
       const dayOfWeek = d.rawDate.getDay();
@@ -422,6 +423,8 @@ export const StudentOverview: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [newTaskText, setNewTaskText] = useState('');
+  const [availableTests, setAvailableTests] = useState<any[]>([]);
+  const [loadingTests, setLoadingTests] = useState(true);
 
   // Persist tasks in localStorage fallback to prevent loss on refresh
   useEffect(() => {
@@ -433,15 +436,23 @@ export const StudentOverview: React.FC = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+        setLoadingTests(true);
         const token = localStorage.getItem('mht_cet_token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const response = await axios.get('http://localhost:5000/api/student/overview-data', { headers });
-        setDashboardData(response.data);
-        setTasks(response.data.tasks || []);
+        
+        const [dashRes, testsRes] = await Promise.all([
+          axios.get('http://localhost:5000/api/student/overview-data', { headers }),
+          axios.get('http://localhost:5000/api/student/available-tests', { headers }).catch(() => ({ data: [] }))
+        ]);
+
+        setDashboardData(dashRes.data);
+        setTasks(dashRes.data.tasks || []);
+        setAvailableTests(testsRes.data || []);
       } catch (err) {
         console.error('Error fetching student overview dashboard data:', err);
       } finally {
         setLoading(false);
+        setLoadingTests(false);
       }
     };
     fetchDashboardData();
@@ -540,7 +551,7 @@ export const StudentOverview: React.FC = () => {
   const studentPrn = dashboardData?.prn || activeUser?.prn || 'MHT202684730';
   const billingId = dashboardData?.billingId || 'INV-1782305377435-7748';
   const plan = dashboardData?.plan || 'Free';
-  const sortedAttempts = [...attempts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sortedAttempts = [...(attempts || [])].sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
   const accuracyIndex = sortedAttempts.length > 0 ? sortedAttempts[0].accuracy : (dashboardData?.accuracyIndex ?? 37);
 
   const calculateStreak = (dates: string[]): number => {
@@ -575,6 +586,23 @@ export const StudentOverview: React.FC = () => {
   const streak = activeUser?.loginDates ? calculateStreak(activeUser.loginDates) : (dashboardData?.streak ?? 0);
   const hoursStudied = dashboardData?.hoursStudied ?? 0;
   const upcomingEvents = dashboardData?.upcomingEvents || [];
+  
+  const upcomingDeadlines = availableTests
+    .filter(t => {
+      const start = t.start_time ? new Date(t.start_time) : new Date(t.scheduledTime);
+      return start > new Date();
+    })
+    .map(t => {
+      const start = t.start_time ? new Date(t.start_time) : new Date(t.scheduledTime);
+      return {
+        id: t.id || t._id,
+        title: t.title || t.test_name,
+        date: start.toISOString(),
+        time: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'test',
+        duration: t.duration || t.duration_minutes
+      };
+    });
   const rank = dashboardData?.rank ?? 4;
   const syllabusProgress = dashboardData?.syllabusProgress || {
     physics: { mastered: 0, total: 4, percentage: 0 },
@@ -647,31 +675,43 @@ export const StudentOverview: React.FC = () => {
       {/* 1. Hero Metrics Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Card 1: Accuracy Index */}
-        <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl p-6 shadow-lg flex flex-col justify-between min-h-[160px]">
+        {/* Card 1: AI Achievements & Badges */}
+        <div className="bg-[var(--bg-card)] border-2 border-[#e2fc5c] rounded-2xl p-6 shadow-[0_0_15px_rgba(226,252,92,0.15)] flex flex-col justify-between min-h-[160px] transition hover:shadow-[0_0_25px_rgba(226,252,92,0.3)] duration-300">
           <div>
             <div className="flex justify-between items-center text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest">
-              <span>Accuracy Index</span>
-              <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">
-                Dynamic Score
+              <span>AI Achievements & Badges</span>
+              <span className="bg-[#e2fc5c]/10 text-[#e2fc5c] border border-[#e2fc5c]/25 px-2 py-0.5 rounded-full text-[9px] font-bold">
+                Gamified Rank
               </span>
             </div>
-            <div className="text-4xl font-extrabold text-[var(--text-main)] mt-3.5">
-              {accuracyIndex}%
-            </div>
-            <div className="text-xs text-[var(--text-muted)] mt-2 font-semibold">
-              Daily goal progress: {tasks.length > 0 
-                ? `${Math.round((tasks.filter(t => t.completed).length / tasks.length) * 100)}%`
-                : '0%'}
-            </div>
+            
+            {sortedAttempts.length === 0 ? (
+              <div className="flex flex-col gap-1 mt-4">
+                <h4 className="text-xs font-black text-[var(--text-main)]">No achievements unlocked yet</h4>
+                <p className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5 leading-relaxed">
+                  Take your first mock test to unlock AI achievements and gamification insights!
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3.5 mt-3.5">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-2xl shadow-lg flex items-center justify-center">
+                  <Award className="w-8 h-8 animate-bounce" style={{ animationDuration: '3s' }} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-[var(--text-main)]">Consistent Scholar</h4>
+                  <p className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5">
+                    Unlocked by maintaining study streaks
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
-          {/* Custom cylindrical progress indicators */}
-          <div className="flex gap-1.5 mt-4">
-            <div className="w-[18px] h-7 rounded-[6px] bg-[var(--bg-app)]" />
-            <div className="w-[18px] h-7 rounded-[6px] bg-[var(--bg-app)]" />
-            <div className="w-[18px] h-7 rounded-[6px] bg-[var(--border)]" />
-            <div className="w-[18px] h-7 rounded-[6px] bg-[var(--border)]" />
-            <div className="w-[18px] h-7 rounded-[6px] bg-[var(--border)]" />
+
+          <div className="flex gap-2 items-center text-[10px] font-black text-[#e2fc5c] mt-4 border-t border-[var(--border)] pt-3">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>
+              {sortedAttempts.length === 0 ? 'AI ENGINE: READY TO GRADE' : 'AI ENGINE: 1 BADGE EARNED'}
+            </span>
           </div>
         </div>
 
@@ -686,9 +726,6 @@ export const StudentOverview: React.FC = () => {
             </div>
             <div className="text-4xl font-extrabold mt-3.5">
               {streak} Days
-            </div>
-            <div className="text-xs text-[#09090b]/80 mt-2 font-semibold">
-              Hours Studied: {hoursStudied} hrs
             </div>
           </div>
           {/* Custom cylindrical progress indicators */}
@@ -754,7 +791,13 @@ export const StudentOverview: React.FC = () => {
           <Calendar className="w-4 h-4 text-[#e2fc5c]" /> Calendar & Upcoming Exam Deadlines
         </h2>
         <div className="max-h-64 overflow-y-auto pr-2 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-zinc-850 scrollbar-track-transparent">
-          {upcomingEvents.map(event => {
+          {loadingTests && (
+            <p className="text-xs text-[var(--text-muted)] text-center py-6 font-semibold animate-pulse">
+              Loading upcoming deadlines...
+            </p>
+          )}
+
+          {!loadingTests && upcomingDeadlines.map(event => {
             const dateParsed = formatEventDate(event.date);
             return (
               <div key={event.id} className="flex gap-4 p-4 bg-[var(--bg-app)] border border-[var(--border)] rounded-xl">
@@ -771,21 +814,17 @@ export const StudentOverview: React.FC = () => {
                   <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)] mt-1 font-semibold">
                     <span>{event.time}</span>
                     <span>•</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                      event.type === 'test' ? 'bg-red-950/40 text-red-400 border border-red-500/20' : 
-                      event.type === 'lecture' ? 'bg-[#e2fc5c]/10 text-[#e2fc5c] border border-[#e2fc5c]/25' : 
-                      'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20'
-                    }`}>
-                      {event.type.toUpperCase()}
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-950/40 text-red-400 border border-red-500/20">
+                      EXAM DEADLINE ({event.duration} Mins)
                     </span>
                   </div>
                 </div>
               </div>
             );
           })}
-          {upcomingEvents.length === 0 && (
+          {!loadingTests && upcomingDeadlines.length === 0 && (
             <p className="text-xs text-[var(--text-muted)] text-center py-6 font-semibold">
-              No upcoming exams or events found.
+              No upcoming exam deadlines scheduled.
             </p>
           )}
         </div>

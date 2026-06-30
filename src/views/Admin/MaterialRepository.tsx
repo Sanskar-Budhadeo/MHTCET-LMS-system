@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { useLms } from '../../context/LmsContext';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, Plus, Trash2, FileText, Video, Image as ImageIcon } from 'lucide-react';
+import axios from '../../axios';
 
 export const MaterialRepository: React.FC = () => {
-  const { studyMaterials, addStudyMaterial, deleteStudyMaterial } = useLms();
+  // Live States
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Form States
   const [title, setTitle] = useState('');
@@ -14,29 +16,56 @@ export const MaterialRepository: React.FC = () => {
   const [url, setUrl] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch from DB
+  const fetchMaterials = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('mht_cet_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const response = await axios.get('http://localhost:5000/api/student/materials', { headers });
+      setMaterials(response.data);
+    } catch (err) {
+      console.error('Error fetching study materials:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMaterials();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !topic || !content) {
       alert('Please fill in required fields.');
       return;
     }
 
-    addStudyMaterial({
-      title,
-      subject,
-      topic,
-      type,
-      content,
-      url: url || undefined
-    });
+    try {
+      const token = localStorage.getItem('mht_cet_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await axios.post('http://localhost:5000/api/faculty/materials', {
+        title,
+        subject,
+        topic,
+        format: type,
+        file_url: url || 'N/A',
+        is_published: true
+      }, { headers });
 
-    alert('Study asset successfully added!');
-    // Reset Form
-    setTitle('');
-    setTopic('');
-    setContent('');
-    setUrl('');
-    setShowAddForm(false);
+      alert('Study asset successfully published to database!');
+      // Reset Form
+      setTitle('');
+      setTopic('');
+      setContent('');
+      setUrl('');
+      setShowAddForm(false);
+      fetchMaterials();
+    } catch (err) {
+      console.error('Error publishing study asset:', err);
+      alert('Failed to publish study asset.');
+    }
   };
 
   const getIcon = (type: string) => {
@@ -159,46 +188,69 @@ export const MaterialRepository: React.FC = () => {
       {/* Materials List Table */}
       <div className="card">
         <h3 style={{ fontSize: '1.15rem', marginBottom: '16px' }}>Active Syllabus Materials</h3>
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Subject</th>
-                <th>Topic</th>
-                <th>Format</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {studyMaterials.map(sm => (
-                <tr key={sm.id}>
-                  <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{sm.title}</td>
-                  <td>
-                    <span className={`badge ${getSubjectBadge(sm.subject)}`}>{sm.subject}</span>
-                  </td>
-                  <td>{sm.topic}</td>
-                  <td>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
-                      {getIcon(sm.type)}
-                      <span>{sm.type}</span>
-                    </span>
-                  </td>
-                  <td>
-                    <button 
-                      onClick={() => { if (confirm('Delete this study material?')) deleteStudyMaterial(sm.id); }} 
-                      className="btn btn-secondary btn-sm"
-                      style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      <Trash2 size={12} />
-                      <span>Delete</span>
-                    </button>
-                  </td>
+        {loading ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading materials...</div>
+        ) : (
+          <div className="table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Subject</th>
+                  <th>Topic</th>
+                  <th>Format</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {materials.map(sm => (
+                  <tr key={sm.id}>
+                    <td style={{ fontWeight: 600, color: 'var(--text-main)' }}>{sm.title}</td>
+                    <td>
+                      <span className={`badge ${getSubjectBadge(sm.subject)}`}>{sm.subject}</span>
+                    </td>
+                    <td>{sm.topic}</td>
+                    <td>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                        {getIcon(sm.type)}
+                        <span>{sm.type}</span>
+                      </span>
+                    </td>
+                    <td>
+                      <button 
+                        onClick={async () => { 
+                          if (confirm('Delete this study material?')) {
+                            try {
+                              const token = localStorage.getItem('mht_cet_token');
+                              const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                              await axios.delete(`http://localhost:5000/api/faculty/materials/${sm.id}`, { headers });
+                              fetchMaterials();
+                            } catch (err) {
+                              console.error('Error deleting study material:', err);
+                              alert('Failed to delete study material.');
+                            }
+                          }
+                        }} 
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Trash2 size={12} />
+                        <span>Delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {materials.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                      No study materials published yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

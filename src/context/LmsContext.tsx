@@ -239,11 +239,14 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
-    localStorage.removeItem('mht_cet_token');
+    localStorage.clear();
+    sessionStorage.clear();
     setActiveUser(null);
     setAttempts([]);
     setNotes([]);
     setEvents(initialEvents);
+    setWeakTopics([]);
+    setStrongTopics([]);
   };
 
   const addQuestion = (q: Omit<Question, 'id'> & { id?: string }) => {

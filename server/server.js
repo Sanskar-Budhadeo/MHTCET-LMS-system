@@ -5,12 +5,67 @@ import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
-import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent, AuditLog, Test, TestSubject, Institute, StudentProfile } from './models.js';
+import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent, AuditLog, Test, TestSubject, Institute, StudentProfile, StudyMaterial } from './models.js';
 import { GoogleGenAI } from '@google/genai';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import analyticsRouter from './routes/analytics.js';
+
+// Robust localized date parser for CalendarEvent formatting
+function parseFlexibleDate(dateStr) {
+  if (!dateStr) return new Date();
+  let d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+  
+  try {
+    const parts = dateStr.split(',');
+    if (parts.length >= 1) {
+      const dateParts = parts[0].trim().split('/');
+      if (dateParts.length === 3) {
+        let val1 = parseInt(dateParts[0], 10);
+        let val2 = parseInt(dateParts[1], 10);
+        let year = parseInt(dateParts[2], 10);
+        
+        let day = val1;
+        let month = val2 - 1; // 0-indexed
+        if (val2 > 12) {
+          day = val2;
+          month = val1 - 1;
+        }
+        
+        let hours = 0;
+        let minutes = 0;
+        let seconds = 0;
+        
+        if (parts.length >= 2) {
+          const timeStr = parts[1].trim().toLowerCase();
+          const timeParts = timeStr.replace(/(am|pm)/, '').trim().split(':');
+          if (timeParts.length >= 2) {
+            hours = parseInt(timeParts[0], 10);
+            minutes = parseInt(timeParts[1], 10);
+            if (timeParts.length >= 3) {
+              seconds = parseInt(timeParts[2], 10);
+            }
+            if (timeStr.includes('pm') && hours < 12) {
+              hours += 12;
+            } else if (timeStr.includes('am') && hours === 12) {
+              hours = 0;
+            }
+          }
+        }
+        
+        const customDate = new Date(year, month, day, hours, minutes, seconds);
+        if (!isNaN(customDate.getTime())) {
+          return customDate;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to parse localized date string:", dateStr, err);
+  }
+  return new Date();
+}
 
 // Resolve directory name in ESM
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -471,7 +526,7 @@ app.get('/api/admin/pending-attempts', adminMiddleware, async (req, res, next) =
       date: att.createdAt.toISOString().split('T')[0],
       score: att.score,
       maxScore: att.max_score,
-      accuracy: att.accuracy
+      accuracy: att.max_score > 0 ? Math.round((att.score / att.max_score) * 100) : 0
     }));
 
     res.json(formatted);
@@ -502,7 +557,7 @@ app.get('/api/admin/attempts', adminOrTeacherMiddleware, async (req, res, next) 
         score: att.score,
         max_score: att.max_score,
         time_spent_seconds: att.time_spent_seconds,
-        accuracy: att.accuracy,
+        accuracy: att.max_score > 0 ? Math.round((att.score / att.max_score) * 100) : 0,
         responses: att.responses || [],
         feedback: att.feedback || null,
         ai_analysis: att.ai_analysis || null,
@@ -1034,9 +1089,10 @@ app.post('/api/auth/register', async (req, res, next) => {
           let isUnique = false;
           const currentYear = new Date().getFullYear();
           while (!isUnique) {
-            studentPrnString = 'MHT' + currentYear + Math.floor(10000 + Math.random() * 90000);
+            studentPrnString = 'MHT' + currentYear + Math.floor(100000 + Math.random() * 900000);
             const existingPrnUser = await User.findOne({ prn: studentPrnString });
-            if (!existingPrnUser) {
+            const existingProfile = await StudentProfile.findOne({ prn: studentPrnString });
+            if (!existingPrnUser && !existingProfile) {
               isUnique = true;
             }
           }
@@ -1089,8 +1145,8 @@ app.post('/api/auth/register', async (req, res, next) => {
           email: normalizedEmail,
           password: hashedPassword,
           role,
-          targetCourse: role === 'student' ? targetCourse : undefined,
-          targetExam: role === 'student' ? targetExam : undefined,
+          targetCourse: role === 'student' ? (targetCourse || 'PCM') : undefined,
+          targetExam: role === 'student' ? (targetExam || 'MHT-CET') : undefined,
           plan: role === 'student' ? (plan || 'Free') : undefined,
           invoiceId,
           invoiceUrl,
@@ -1100,7 +1156,13 @@ app.post('/api/auth/register', async (req, res, next) => {
           parentId: parentUser ? parentUser._id : undefined,
           linkedStudentId: studentToLink ? studentToLink._id : undefined,
           linkedStudents: studentToLink ? [studentToLink._id] : [],
-          status
+          status,
+          testProgress: [],
+          weeklyActivity: new Map(),
+          tasks: [],
+          streak: 0,
+          hoursStudied: 0,
+          loginDates: role === 'student' ? [new Date().toISOString()] : []
         });
 
         // Link parent to student
@@ -1108,6 +1170,15 @@ app.post('/api/auth/register', async (req, res, next) => {
           if (!parentUser.linkedStudents) parentUser.linkedStudents = [];
           parentUser.linkedStudents.push(newUser._id);
           await parentUser.save();
+        }
+
+        if (role === 'student') {
+          await StudentProfile.create({
+            user_id: newUser._id,
+            prn: studentPrnString,
+            roll_number: 'ROLL-' + Math.floor(100000 + Math.random() * 900000),
+            grade: '12th'
+          });
         }
 
         if (studentToLink) {
@@ -1501,7 +1572,6 @@ app.post('/api/student/analyze-test', authMiddleware, async (req, res, next) => 
       score: scoreData.score,
       max_score: scoreData.maxScore,
       time_spent_seconds: scoreData.timeSpent,
-      accuracy: scoreData.accuracy,
       responses: dbResponses,
       percentile: scoreData.percentile || req.body.percentile || null,
       nationalRank: scoreData.nationalRank || req.body.nationalRank || null,
@@ -1708,7 +1778,7 @@ app.get('/api/admin/test-submissions', authMiddleware, async (req, res, next) =>
             submitted: true,
             score: attempt.score,
             maxScore: attempt.max_score,
-            accuracy: attempt.accuracy,
+            accuracy: attempt.max_score > 0 ? Math.round((attempt.score / attempt.max_score) * 100) : 0,
             date: attempt.createdAt ? new Date(attempt.createdAt).toISOString().split('T')[0] : '—'
           };
         } else {
@@ -1798,7 +1868,7 @@ app.get('/api/student/test-attempts/:attemptId/analytics', authMiddleware, async
       examType: attempt.examType,
       score: attempt.score,
       max_score: attempt.max_score,
-      accuracy: attempt.accuracy,
+      accuracy: attempt.max_score > 0 ? Math.round((attempt.score / attempt.max_score) * 100) : 0,
       percentile: attempt.percentile,
       nationalRank: attempt.nationalRank,
       chapterAccuracy,
@@ -1851,7 +1921,7 @@ app.get('/api/parent/dashboard', authMiddleware, async (req, res, next) => {
           score: att.score,
           maxScore: att.max_score,
           timeSpent: att.time_spent_seconds,
-          accuracy: att.accuracy,
+          accuracy: att.max_score > 0 ? Math.round((att.score / att.max_score) * 100) : 0,
           percentile: att.percentile,
           nationalRank: att.nationalRank,
           responsesCount: att.responses ? att.responses.length : 0,
@@ -2014,7 +2084,6 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
       score: score,
       max_score: maxScore,
       time_spent_seconds: timeSpent || 0,
-      accuracy: accuracy,
       responses: responses,
       percentile: percentile,
       nationalRank: nationalRank,
@@ -2022,7 +2091,7 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
         weak_topics: responses.filter(r => !r.isCorrect).map(r => r.chapter).filter((v, i, a) => v && a.indexOf(v) === i),
         time_management_rating: 'Optimal time partitioning detected across subjects.',
         student_feedback: `You completed the test in ${Math.round((timeSpent || 0) / 60)} minutes. Review the flagged conceptual errors. Recommended study directive: solve 10 questions on weak topics using the AI custom simulator, focusing specifically on coordinate geometry.`,
-        parent_feedback: `Student scored ${score}/${maxScore} with accuracy ${accuracy}%. Strongest area remains unit cell chemistry. Weakest chapters have been queued for revision. Recommended action: Monitor weekly performance trends in the Standing tab.`
+        parent_feedback: `Student scored ${score}/${maxScore}. Strongest area remains unit cell chemistry. Weakest chapters have been queued for revision. Recommended action: Monitor weekly performance trends in the Standing tab.`
       }
     });
 
@@ -2035,7 +2104,7 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
     if (updatedUser) {
       await AuditLog.create({
         action: 'Exam Submitted',
-        details: `Student "${updatedUser.name}" submitted Mock Test "${testName}" scoring ${score}/${maxScore} (${accuracy}% accuracy).`
+        details: `Student "${updatedUser.name}" submitted Mock Test "${testName}" scoring ${score}/${maxScore}.`
       });
     }
 
@@ -2043,7 +2112,6 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
       attemptId: attempt._id,
       score: score,
       maxScore: maxScore,
-      accuracy: accuracy,
       correctCount: correctCount,
       totalQuestions: test.questions.length,
       percentile: percentile,
@@ -2284,10 +2352,10 @@ const getDashboardData = async (req, res, next) => {
 
     const upcomingEvents = allEvents
       .filter(e => {
-        const eventDate = new Date(e.date);
+        const eventDate = parseFlexibleDate(e.date);
         return eventDate >= parsedToday;
       })
-      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .sort((a, b) => parseFlexibleDate(a.date) - parseFlexibleDate(b.date))
       .slice(0, 3);
 
     // Subject-wise progress mapping
@@ -2325,7 +2393,8 @@ const getDashboardData = async (req, res, next) => {
     let accuracy = 37;
     if (attempts.length > 0) {
       const sortedAttempts = [...attempts].sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime());
-      accuracy = sortedAttempts[0].accuracy;
+      const latest = sortedAttempts[0];
+      accuracy = latest.max_score > 0 ? Math.round((latest.score / latest.max_score) * 100) : 0;
     }
 
     // Rank Calculation
@@ -2398,7 +2467,7 @@ app.get('/api/student/overview-data', authMiddleware, getDashboardData);
 // GET Test Arena Dashboard Data endpoint
 app.get('/api/test-arena/dashboard/:userId', authMiddleware, async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id; // Enforce secure JWT extraction to prevent cross-profile leakage
 
     if (mongoose.connection.readyState === 1) {
       // Execute mockTest find and testAttempt find queries concurrently
@@ -2421,7 +2490,7 @@ app.get('/api/test-arena/dashboard/:userId', authMiddleware, async (req, res, ne
           score: a.score,
           totalMarks: a.max_score,
           dateAttempted: a.createdAt,
-          accuracy: a.accuracy
+          accuracy: a.max_score > 0 ? Math.round((a.score / a.max_score) * 100) : 0
         }))
       });
     } else {
@@ -2895,20 +2964,18 @@ app.get('/api/teacher/dashboard-stats', authMiddleware, async (req, res, next) =
 app.get('/api/teacher/students/search', teacherMiddleware, async (req, res, next) => {
   try {
     const { query } = req.query;
-    if (!query) {
-      return res.status(400).json({ error: 'Search query is required.' });
-    }
+    const queryStr = query ? String(query).trim() : '';
 
     if (mongoose.connection.readyState === 1) {
-      const searchRegex = new RegExp(query, 'i');
-      const students = await User.find({
-        role: 'student',
-        $or: [
+      const filter = { role: 'student' };
+      if (queryStr) {
+        const searchRegex = new RegExp(queryStr, 'i');
+        filter.$or = [
           { name: searchRegex },
           { prn: searchRegex }
-        ]
-      }).select('id name email targetCourse targetExam plan prn status');
-
+        ];
+      }
+      const students = await User.find(filter).select('id name email targetCourse targetExam plan prn status');
       return res.json(students);
     } else {
       // Offline fallback
@@ -3250,6 +3317,212 @@ app.get('/api/faculty/created-tests', authMiddleware, async (req, res, next) => 
   }
 });
 
+// GET /api/faculty/student-report/:prn (Get full dossier details for student by PRN - Faculty / Admin only)
+app.get('/api/faculty/student-report/:prn', authMiddleware, async (req, res, next) => {
+  try {
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole !== 'FACULTY' && userRole !== 'ADMIN' && userRole !== 'TEACHER') {
+      return res.status(403).json({ error: 'Access denied. Faculty/Admin permission required.' });
+    }
+
+    const { prn } = req.params;
+    if (mongoose.connection.readyState === 1) {
+      const student = await User.findOne({ prn: { $regex: new RegExp('^' + prn + '$', 'i') } });
+      if (!student) {
+        return res.status(404).json({ error: `Student with PRN "${prn}" not found.` });
+      }
+
+      const attempts = await TestAttempt.find({ student_id: student._id.toString() }).sort({ createdAt: -1 });
+
+      const correctCountByTopic = {};
+      const totalCountByTopic = {};
+      attempts.forEach(att => {
+        (att.responses || []).forEach(r => {
+          const topic = r.chapter || 'General';
+          if (!correctCountByTopic[topic]) correctCountByTopic[topic] = 0;
+          if (!totalCountByTopic[topic]) totalCountByTopic[topic] = 0;
+          totalCountByTopic[topic]++;
+          if (r.isCorrect) correctCountByTopic[topic]++;
+        });
+      });
+
+      const weakTopicsList = [];
+      const strongTopicsList = [];
+      Object.keys(totalCountByTopic).forEach(topic => {
+        const acc = (correctCountByTopic[topic] / totalCountByTopic[topic]) * 100;
+        if (acc >= 75) {
+          strongTopicsList.push(topic);
+        } else if (acc < 50) {
+          weakTopicsList.push(topic);
+        }
+      });
+
+      let averageAccuracy = 0;
+      if (attempts.length > 0) {
+        averageAccuracy = Math.round(attempts.reduce((sum, a) => {
+          const acc = a.accuracy !== undefined ? a.accuracy : (a.max_score > 0 ? (a.score / a.max_score) * 100 : 0);
+          return sum + acc;
+        }, 0) / attempts.length);
+      }
+
+      const performanceGrid = attempts.map(a => {
+        const correct = (a.responses || []).filter(r => r.isCorrect).length;
+        const incorrect = (a.responses || []).filter(r => !r.isCorrect).length;
+        return {
+          id: a._id,
+          testName: a.test_name,
+          score: a.score,
+          maxScore: a.max_score,
+          correct,
+          incorrect,
+          date: a.createdAt,
+          timeSpent: a.time_spent_seconds || 0
+        };
+      });
+
+      const totalTimeSpent = attempts.reduce((sum, a) => sum + (a.time_spent_seconds || 0), 0);
+      const totalQuestionsCount = attempts.reduce((sum, a) => sum + (a.responses?.length || 0), 0);
+      const speedIndex = totalQuestionsCount > 0 ? Math.round(totalTimeSpent / totalQuestionsCount) : 0;
+
+      res.json({
+        name: student.name,
+        email: student.email,
+        prn: student.prn,
+        targetExam: student.targetExam || 'MHT-CET',
+        streak: student.streak || 0,
+        performanceGrid,
+        aiInsights: {
+          averageAccuracy,
+          weakTopics: weakTopicsList,
+          strongTopics: strongTopicsList,
+          speedIndex,
+          aiFeedback: attempts.length > 0 && attempts[0].ai_analysis?.student_feedback
+            ? attempts[0].ai_analysis.student_feedback
+            : 'No test analysis generated yet. Advise the student to complete a diagnostic test.'
+        }
+      });
+    } else {
+      res.json({
+        name: 'Offline Student',
+        email: 'offline@cet.com',
+        prn,
+        targetExam: 'MHT-CET',
+        streak: 5,
+        performanceGrid: [
+          { id: '1', testName: 'Rotational Dynamics Quiz', score: 8, maxScore: 10, correct: 8, incorrect: 2, date: new Date().toISOString(), timeSpent: 120 }
+        ],
+        aiInsights: {
+          averageAccuracy: 80,
+          weakTopics: ['Electrostatics'],
+          strongTopics: ['Rotational Dynamics'],
+          speedIndex: 12,
+          aiFeedback: 'Student shows strong rotational analytics but lacks electrostatic conceptual clarity.'
+        }
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/faculty/materials (Create study material - Faculty / Admin only)
+app.post('/api/faculty/materials', authMiddleware, async (req, res, next) => {
+  try {
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole !== 'TEACHER' && userRole !== 'ADMIN' && userRole !== 'FACULTY') {
+      return res.status(403).json({ error: 'Access forbidden: Faculty or Admin role required.' });
+    }
+
+    const { title, subject, topic, format, file_url, is_published } = req.body;
+    if (!title || !subject || !topic || !format || !file_url) {
+      return res.status(400).json({ error: 'Please provide title, subject, topic, format, and file_url.' });
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      const material = await StudyMaterial.create({
+        title,
+        subject,
+        topic,
+        format,
+        file_url,
+        is_published: is_published !== undefined ? is_published : true,
+        created_by: req.user.id
+      });
+      res.status(201).json(material);
+    } else {
+      res.status(201).json({
+        _id: 'offline_material_' + Date.now(),
+        title,
+        subject,
+        topic,
+        format,
+        file_url,
+        is_published: true,
+        created_by: req.user.id
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/faculty/materials/:id (Delete study material - Faculty / Admin only)
+app.delete('/api/faculty/materials/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole !== 'TEACHER' && userRole !== 'ADMIN' && userRole !== 'FACULTY') {
+      return res.status(403).json({ error: 'Access forbidden: Faculty or Admin role required.' });
+    }
+
+    const { id } = req.params;
+    if (mongoose.connection.readyState === 1) {
+      const deleted = await StudyMaterial.findByIdAndDelete(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Study material not found.' });
+      }
+      res.json({ success: true, message: 'Study material deleted successfully.' });
+    } else {
+      res.json({ success: true, message: 'Offline mode: deleted.' });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/student/materials (Get all published study materials - Students and Faculty)
+app.get('/api/student/materials', authMiddleware, async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const materials = await StudyMaterial.find({ is_published: true })
+        .populate('created_by', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+      
+      const result = materials.map(m => ({
+        id: m._id,
+        _id: m._id,
+        title: m.title,
+        subject: m.subject,
+        topic: m.topic,
+        format: m.format,
+        type: m.format, // for UI backwards compatibility
+        file_url: m.file_url,
+        url: m.file_url, // for UI backwards compatibility
+        author: m.created_by?.name || 'Faculty Advisor'
+      }));
+      res.json(result);
+    } else {
+      res.json([
+        { id: '1', title: 'Rotational Dynamics Lecture Notes', author: 'V. K. Mehta (HOD Physics)', subject: 'Physics', type: 'Note', format: 'Note', url: '#' },
+        { id: '2', title: 'Solid State Structure & Bragg\'s Law Cheat Sheet', author: 'Dr. R. S. Patil', subject: 'Chemistry', type: 'PDF', format: 'PDF', url: '#' },
+        { id: '3', title: 'Matrices & Determinants Short Tricks', author: 'Prof. M. K. Kulkarni', subject: 'Mathematics', type: 'Video', format: 'Video', url: '#' }
+      ]);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET all available tests for the logged-in student matches their exam type (Student only)
 app.get('/api/student/available-tests', authMiddleware, async (req, res, next) => {
   try {
@@ -3264,6 +3537,7 @@ app.get('/api/student/available-tests', authMiddleware, async (req, res, next) =
       // Find published tests for this exam
       const tests = await Test.find({ is_published: true, exam_id: targetExam })
         .populate('questions')
+        .sort({ start_time: -1, createdAt: -1 })
         .lean();
 
       const testIds = tests.map(t => t._id);

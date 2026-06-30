@@ -65,10 +65,6 @@ const TestAttemptSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  accuracy: {
-    type: Number,
-    required: true
-  },
   responses: [{
     questionId: { type: String },
     selectedOption: { type: String },
@@ -370,7 +366,8 @@ const StudentProfileSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   institute_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Institute' },
   roll_number: { type: String },
-  grade: { type: String }
+  grade: { type: String },
+  prn: { type: String, unique: true, sparse: true }
 }, { timestamps: true });
 
 export const StudentProfile = mongoose.model('StudentProfile', StudentProfileSchema);
@@ -409,4 +406,17 @@ const TestSubjectSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const TestSubject = mongoose.model('TestSubject', TestSubjectSchema);
+
+const StudyMaterialSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  subject: { type: String, required: true },
+  topic: { type: String, required: true },
+  format: { type: String, required: true },
+  file_url: { type: String, required: true },
+  is_published: { type: Boolean, default: false },
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+}, { timestamps: true });
+
+export const StudyMaterial = mongoose.model('StudyMaterial', StudyMaterialSchema);
+
 
