@@ -102,6 +102,48 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
   const [submissionsData, setSubmissionsData] = useState<any[]>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState<boolean>(false);
 
+  // Dashboard overview stats state
+  const [stats, setStats] = useState<{
+    totalStudents: number;
+    testsScheduledThisWeek: number;
+    recentActivity: any[];
+    testSubmissionOverview: any[];
+  } | null>(null);
+  const [loadingStats, setLoadingStats] = useState<boolean>(false);
+
+  const fetchDashboardStats = () => {
+    setLoadingStats(true);
+    const token = localStorage.getItem('mht_cet_token');
+    fetch('http://localhost:5000/api/teacher/dashboard-stats', {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : ''
+      }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('Stats fetch error');
+        return res.json();
+      })
+      .then(data => {
+        setStats(data);
+        setLoadingStats(false);
+      })
+      .catch(err => {
+        console.error('Error fetching dashboard stats:', err);
+        // Fallback for offline mode
+        setStats({
+          totalStudents: 3,
+          testsScheduledThisWeek: 1,
+          recentActivity: [
+            { _id: 'a1', action: 'System Setup', details: 'LMS Academic Server started in offline fallback mode.', createdAt: new Date().toISOString() }
+          ],
+          testSubmissionOverview: [
+            { testName: 'MHT-CET Full Syllabus Active Practice Exam #1', submitted: 0, pending: 3 }
+          ]
+        });
+        setLoadingStats(false);
+      });
+  };
+
   // Fetch upcoming scheduled events
   const fetchEvents = () => {
     setLoadingEvents(true);
@@ -148,8 +190,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
     fetchEvents();
     // Fetch mock test submissions tracker
     fetchSubmissions();
-    // Default search for students on load
-    handleSearch('Rahul');
+    // Fetch teacher overview dashboard stats & audit logs
+    fetchDashboardStats();
   }, []);
 
   const handleSearch = (queryVal?: string) => {
@@ -182,13 +224,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
       })
       .catch(err => {
         console.error('Error searching students:', err);
-        setError('Failed to fetch students. Rendering offline fallback list.');
-        // Set offline mock list if endpoint fails
-        setStudents([
-          { id: 'u_ राहुल', name: 'Rahul Sharma', email: 'rahul@cet.com', targetCourse: 'PCM', targetExam: 'MHT-CET', plan: 'Pro', prn: 'MHT202612345', status: 'active' },
-          { id: 'u_प्रिया', name: 'Priya Patil', email: 'priya@cet.com', targetCourse: 'PCB', targetExam: 'MHT-CET', plan: 'Free', prn: 'MHT202654321', status: 'active' },
-          { id: 'u_अमित', name: 'Amit Deshmukh', email: 'amit@cet.com', targetCourse: 'PCMB', targetExam: 'MHT-CET', plan: 'Premium', prn: 'MHT202688990', status: 'active' }
-        ]);
+        setError('Failed to fetch students. Search returned no results.');
+        setStudents([]);
         setLoadingSearch(false);
       });
   };
@@ -435,6 +472,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
         <p style={{ color: 'var(--text-muted)' }}>
           Monitor individual student enrollment metrics, dispatch personalized AI diagnostics, and schedule mock tests.
         </p>
+      </div>
+
+      {/* Quick Metrics Banner */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '20px' }}>
+          <div style={{ padding: '12px', borderRadius: '12px', backgroundColor: 'rgba(37,99,235,0.1)', color: 'var(--accent)', display: 'flex' }}>
+            <User size={24} />
+          </div>
+          <div>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block' }}>Active Students Assigned</span>
+            <strong style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats ? stats.totalStudents : 0}</strong>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '20px' }}>
+          <div style={{ padding: '12px', borderRadius: '12px', backgroundColor: 'rgba(210,255,61,0.1)', color: 'var(--accent)', display: 'flex' }}>
+            <Calendar size={24} />
+          </div>
+          <div>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block' }}>Tests Scheduled This Week</span>
+            <strong style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats ? stats.testsScheduledThisWeek : 0}</strong>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '20px' }}>
+          <div style={{ padding: '12px', borderRadius: '12px', backgroundColor: 'rgba(124,58,237,0.1)', color: 'var(--accent)', display: 'flex' }}>
+            <Activity size={24} />
+          </div>
+          <div>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'block' }}>Audit Logs Recorded</span>
+            <strong style={{ fontSize: '1.75rem', fontWeight: 800 }}>{stats ? stats.recentActivity.length : 0}</strong>
+          </div>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '24px', alignItems: 'start' }}>
@@ -990,13 +1060,92 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ view = 'dash
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-                <User size={48} style={{ color: 'var(--text-muted)', marginBottom: '16px', opacity: 0.6 }} />
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Student Profile Viewer</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', maxWidth: '400px', margin: '8px 0 0' }}>
-                  Please select a student from the directory on the left to examine their academic logs, request AI performance reports, and schedule customized exam sessions.
-                </p>
+              
+              {/* Activity Timeline */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <Activity size={18} style={{ color: 'var(--accent)' }} /> Recent Activity Feed (AUDIT_LOGS)
+                </h3>
+                
+                {loadingStats ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '20px 0' }}>
+                    <Loader2 size={16} className="spinner" />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading timeline logs...</span>
+                  </div>
+                ) : !stats || stats.recentActivity.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>
+                    No recent activity logs recorded in the database.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {stats.recentActivity.map((log: any, i: number) => (
+                      <div key={log._id || i} style={{ display: 'flex', gap: '12px', borderLeft: '2px solid var(--border)', paddingLeft: '16px', position: 'relative' }}>
+                        <div style={{
+                          position: 'absolute',
+                          left: '-6px',
+                          top: '4px',
+                          width: '10px',
+                          height: '10px',
+                          borderRadius: '50%',
+                          backgroundColor: log.action.includes('Submitted') ? '#10b981' : 'var(--accent)',
+                          border: '2px solid var(--bg-card)'
+                        }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>{log.action}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-light)' }}>
+                              {new Date(log.timestamp || log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>{log.details}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Submissions Overview */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h3 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <FileText size={18} style={{ color: 'var(--info)' }} /> Mock Exams Submissions Overview
+                </h3>
+                
+                {loadingStats ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '20px 0' }}>
+                    <Loader2 size={16} className="spinner" />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading exam submissions...</span>
+                  </div>
+                ) : !stats || stats.testSubmissionOverview.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>
+                    No mock tests currently configured in the database.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {stats.testSubmissionOverview.map((exam: any, i: number) => {
+                      const total = exam.submitted + exam.pending;
+                      const percent = total > 0 ? Math.round((exam.submitted / total) * 100) : 0;
+                      return (
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderBottom: i < stats.testSubmissionOverview.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{exam.testName}</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              {exam.submitted} Submitted / {exam.pending} Pending
+                            </span>
+                          </div>
+                          
+                          {/* Progress bar */}
+                          <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--primary-light)', borderRadius: '9999px', overflow: 'hidden', display: 'flex' }}>
+                            <div style={{ width: `${percent}%`, height: '100%', backgroundColor: '#10b981', transition: 'width 0.4s ease' }} />
+                            <div style={{ flex: 1, height: '100%', backgroundColor: 'rgba(234, 88, 12, 0.15)' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
 

@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
-import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent } from './models.js';
+import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent, AuditLog } from './models.js';
 import { GoogleGenAI } from '@google/genai';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -152,6 +152,7 @@ mongoose.connect(process.env.MONGODB_URI)
         // Clear all existing mock tests and test attempts first
         await TestAttempt.deleteMany({});
         await MockTest.deleteMany({});
+        await CalendarEvent.deleteMany({});
 
         const responses = [];
         if (seededQuestions.length > 0) {
@@ -185,35 +186,7 @@ mongoose.connect(process.env.MONGODB_URI)
           });
         }
 
-        const attempt1 = await TestAttempt.create({
-          student_id: student._id.toString(),
-          test_name: 'MHT-CET Rotational Dynamics Practice Quiz',
-          examType: 'MHT-CET',
-          score: 85,
-          max_score: 100,
-          time_spent_seconds: 2400,
-          accuracy: 85,
-          percentile: 91.2,
-          nationalRank: 102,
-          responses: responses,
-          ai_analysis: {
-            weak_topics: ['Rotational Dynamics Friction'],
-            time_management_rating: 'Excellent speed control',
-            student_feedback: 'Rahul, strong performance. Review banking of roads friction equations.',
-            parent_feedback: 'Rahul did exceptionally well on this test. Continued revisions are underway.'
-          },
-          feedback: {
-            instructorName: 'Prof. Sharma',
-            text: 'Great work Rahul. Review banking of roads equations before the next mock test.',
-            date: '2026-06-28',
-            aiSuggestions: [
-              'Review static friction coefficient parameters.',
-              'Optimize banking velocity formulas.'
-            ]
-          }
-        });
-
-        student.testProgress = [attempt1._id];
+        student.testProgress = [];
         await student.save();
 
         console.log('[DATABASE] Seeding active mock tests...');
@@ -239,13 +212,7 @@ mongoose.connect(process.env.MONGODB_URI)
           scheduledTime: targetScheduledDate
         });
 
-        // Also add calendar event for it
-        await CalendarEvent.create({
-          title: 'MHT-CET PCM 50 Full Syllabus Test (Published Mock)',
-          date: targetScheduledDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-          type: 'Test',
-          subject: 'Physics'
-        });
+
 
         console.log('[DATABASE] Seeding complete.');
       }
@@ -587,9 +554,71 @@ app.get('/api/user/dashboard-stats', authMiddleware, async (req, res, next) => {
     }
 
     const totalTests = attempts.length;
-    const avgAccuracy = totalTests > 0 
-      ? Math.round(attempts.reduce((sum, att) => sum + att.accuracy, 0) / totalTests) 
-      : 0;
+    let avgAccuracy = 0;
+    if (totalTests > 0) {
+      const sortedAttempts = [...attempts].sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime());
+      avgAccuracy = sortedAttempts[0].accuracy;
+    }
+
+    // Update streak logic
+    if (user && user.role === 'student') {
+      const formatLocalDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const todayStr = formatLocalDate(new Date());
+      let streakUpdated = false;
+      if (!user.loginDates) user.loginDates = [];
+      if (!user.loginDates.includes(todayStr)) {
+        user.loginDates.push(todayStr);
+        streakUpdated = true;
+      }
+
+      // Calculate consecutive streak
+      const sortedDates = [...user.loginDates]
+        .filter((value, index, self) => self.indexOf(value) === index)
+        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+      let streak = 0;
+      let checkDate = new Date();
+      checkDate.setHours(0, 0, 0, 0);
+
+      const tStr = formatLocalDate(checkDate);
+      const yDate = new Date(checkDate);
+      yDate.setDate(yDate.getDate() - 1);
+      const yStr = formatLocalDate(yDate);
+
+      if (sortedDates.includes(tStr) || sortedDates.includes(yStr)) {
+        if (sortedDates.includes(tStr)) {
+          checkDate = new Date();
+        } else {
+          checkDate = yDate;
+        }
+
+        while (true) {
+          const cStr = formatLocalDate(checkDate);
+          if (sortedDates.includes(cStr)) {
+            streak++;
+            checkDate.setDate(checkDate.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (user.streak !== streak || user.streaks !== streak) {
+        user.streak = streak;
+        user.streaks = streak;
+        streakUpdated = true;
+      }
+
+      if (streakUpdated && mongoose.connection.readyState === 1) {
+        await user.save();
+      }
+    }
 
     // Fetch all students to calculate ranks
     let siteRank = 4; // default fallback rank
@@ -768,9 +797,43 @@ app.post('/api/user/study-time', authMiddleware, async (req, res, next) => {
         user = await User.findOne({ email: req.user.email });
       }
       if (user) {
-        await User.findByIdAndUpdate(user._id, {
-          $inc: { hoursStudied: hours }
-        });
+        // Increment total hours
+        user.hoursStudied = (user.hoursStudied || 0) + hours;
+
+        // Clean outdated keys from previous weeks to start fresh every week
+        const getStartOfWeek = () => {
+          const today = new Date();
+          const day = today.getDay();
+          const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+          const start = new Date(today.setDate(diff));
+          start.setHours(0, 0, 0, 0);
+          return start;
+        };
+
+        const startOfWeek = getStartOfWeek();
+        if (!user.weeklyActivity) {
+          user.weeklyActivity = new Map();
+        }
+
+        // Clean old keys from map
+        for (const dateKey of Array.from(user.weeklyActivity.keys())) {
+          if (new Date(dateKey) < startOfWeek) {
+            user.weeklyActivity.delete(dateKey);
+          }
+        }
+
+        // Increment today's logged hours in Map
+        const formatLocalDate = (date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+        const todayStr = formatLocalDate(new Date());
+        const currentHours = user.weeklyActivity.get(todayStr) || 0;
+        user.weeklyActivity.set(todayStr, Math.round((currentHours + hours) * 100) / 100);
+
+        await user.save();
       }
       res.json({ success: true, hoursAdded: hours });
     } else {
@@ -980,7 +1043,7 @@ app.post('/api/auth/register', async (req, res, next) => {
         }
 
         if (role === 'teacher') {
-          status = 'pending';
+          status = 'active';
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -1051,6 +1114,14 @@ app.post('/api/auth/register', async (req, res, next) => {
           studentToLink.parentId = newUser._id;
           await studentToLink.save();
         }
+
+        if (newUser) {
+          const capitalizedRole = role.charAt(0).toUpperCase() + role.slice(1);
+          await AuditLog.create({
+            action: `${capitalizedRole} Registered`,
+            details: `New ${role} "${name}" (${normalizedEmail}) registered successfully.`
+          });
+        }
       } catch (dbErr) {
         console.warn('[DATABASE WARNING] Auth registration query failed. Falling back to virtual user.', dbErr.message);
       }
@@ -1082,7 +1153,7 @@ app.post('/api/auth/register', async (req, res, next) => {
         profileAvatar: role === 'student' ? (profileAvatar || 'avatar1') : undefined,
         linkedStudentId: role === 'parent' ? 'u_student' : undefined,
         linkedStudents: role === 'parent' ? ['u_student'] : [],
-        status: role === 'teacher' ? 'pending' : 'active'
+        status: 'active'
       };
     }
 
@@ -1947,10 +2018,17 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
     });
 
     // Also push the attempt reference to user profile
-    await User.findByIdAndUpdate(studentId, {
+    const updatedUser = await User.findByIdAndUpdate(studentId, {
       $push: { testProgress: attempt._id },
       $inc: { hoursStudied: Math.round(((timeSpent || 0) / 3600) * 10) / 10 || 0.1 }
     });
+
+    if (updatedUser) {
+      await AuditLog.create({
+        action: 'Exam Submitted',
+        details: `Student "${updatedUser.name}" submitted Mock Test "${test.name}" scoring ${score}/${maxScore} (${accuracy}% accuracy).`
+      });
+    }
 
     res.status(201).json({
       attemptId: attempt._id,
@@ -2098,14 +2176,47 @@ const getDashboardData = async (req, res, next) => {
     const yesterdayStr = formatLocalDate(yesterday);
 
     let streakUpdated = false;
+    if (!user.loginDates) user.loginDates = [];
     if (!user.loginDates.includes(todayStr)) {
-      if (user.loginDates.includes(yesterdayStr)) {
-        user.streak = (user.streak || 0) + 1;
-      } else {
-        user.streak = 1;
-      }
       user.loginDates.push(todayStr);
-      user.streaks = user.streak; // Keep streaks field in sync
+      streakUpdated = true;
+    }
+
+    // Calculate consecutive streak
+    const sortedDates = [...user.loginDates]
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    let streak = 0;
+    let checkDate = new Date();
+    checkDate.setHours(0, 0, 0, 0);
+
+    const tStr = formatLocalDate(checkDate);
+    const yDate = new Date(checkDate);
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = formatLocalDate(yDate);
+
+    if (sortedDates.includes(tStr) || sortedDates.includes(yStr)) {
+      if (sortedDates.includes(tStr)) {
+        checkDate = new Date();
+      } else {
+        checkDate = yDate;
+      }
+
+      while (true) {
+        const cStr = formatLocalDate(checkDate);
+        if (sortedDates.includes(cStr)) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (user.streak !== streak || user.streaks !== streak) {
+      user.streak = streak;
+      user.streaks = streak;
       streakUpdated = true;
     }
 
@@ -2201,17 +2312,49 @@ const getDashboardData = async (req, res, next) => {
       }
     });
 
-    // Accuracy Calculation
+    // Accuracy Calculation based on the last exam taken in the test arena
     let accuracy = 37;
     if (attempts.length > 0) {
-      const sum = attempts.reduce((acc, att) => acc + att.accuracy, 0);
-      accuracy = Math.round(sum / attempts.length);
+      const sortedAttempts = [...attempts].sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime());
+      accuracy = sortedAttempts[0].accuracy;
     }
 
     // Rank Calculation
     const currentUserStringId = user._id.toString();
     const currentRankIndex = peerRanks.findIndex(item => item._id === currentUserStringId);
     const rank = currentRankIndex !== -1 ? currentRankIndex + 1 : peerRanks.length + 1;
+
+    // 1. Generate current week days list with real hours spent
+    const getStartOfWeek = () => {
+      const today = new Date();
+      const day = today.getDay();
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+      const start = new Date(today.setDate(diff));
+      start.setHours(0, 0, 0, 0);
+      return start;
+    };
+    const startOfWeek = getStartOfWeek();
+    const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const weeklyActivityList = [];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      let hours = 0;
+      if (user.weeklyActivity) {
+        hours = user.weeklyActivity.get(dateStr) || 0;
+      }
+      weeklyActivityList.push({
+        dayName: weekdayNames[i],
+        dateStr,
+        hours
+      });
+    }
 
     res.json({
       name: user.name,
@@ -2232,7 +2375,8 @@ const getDashboardData = async (req, res, next) => {
         type: e.type.toLowerCase()
       })),
       syllabusProgress,
-      rank
+      rank,
+      weeklyActivityList
     });
   } catch (err) {
     next(err);
@@ -2654,6 +2798,90 @@ app.put('/api/admin/approve-teacher/:id', adminMiddleware, async (req, res, next
   }
 });
 
+// Get teacher overview dashboard stats & audit timeline
+app.get('/api/teacher/dashboard-stats', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Access forbidden: Staff role required.' });
+    }
+
+    let totalStudents = 0;
+    let testsScheduledThisWeek = 0;
+    let auditLogs = [];
+    let testsList = [];
+
+    // Calculate dates of the current week (Monday to Sunday)
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() + diffToMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    if (mongoose.connection.readyState === 1) {
+      totalStudents = await User.countDocuments({ role: 'student' });
+      
+      // Fetch mock tests scheduled this week
+      const weeklyTests = await MockTest.find({});
+      weeklyTests.forEach(test => {
+        if (test.scheduledTime) {
+          const testDate = new Date(test.scheduledTime);
+          if (testDate >= startOfWeek && testDate <= endOfWeek) {
+            testsScheduledThisWeek++;
+          }
+        }
+      });
+
+      // Fetch recent audit logs (sorted descending, limit to 20)
+      auditLogs = await AuditLog.find({}).sort({ createdAt: -1 }).limit(20).lean();
+
+      // Retrieve submission counts (Submitted vs Pending)
+      const students = await User.find({ role: 'student' }).select('_id name prn').lean();
+      const mockTests = await MockTest.find({}).select('_id name subjects scheduledTime').lean();
+      const attempts = await TestAttempt.find({}).select('student_id test_name').lean();
+
+      testsList = mockTests.map(test => {
+        const submittedCount = students.filter(student => 
+          attempts.some(att => 
+            att.student_id === student._id.toString() &&
+            att.test_name.toLowerCase().trim() === test.name.toLowerCase().trim()
+          )
+        ).length;
+
+        const pendingCount = students.length - submittedCount;
+
+        return {
+          testName: test.name,
+          submitted: submittedCount,
+          pending: pendingCount
+        };
+      });
+    } else {
+      // Offline fallback defaults
+      totalStudents = 3;
+      testsScheduledThisWeek = 1;
+      auditLogs = [
+        { _id: 'a1', action: 'System Setup', details: 'LMS Academic Server started in offline fallback mode.', createdAt: new Date() }
+      ];
+      testsList = [
+        { testName: 'MHT-CET Full Syllabus Active Practice Exam #1', submitted: 0, pending: 3 }
+      ];
+    }
+
+    res.json({
+      totalStudents,
+      testsScheduledThisWeek,
+      recentActivity: auditLogs,
+      testSubmissionOverview: testsList
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Search students by name or PRN (Teacher only)
 app.get('/api/teacher/students/search', teacherMiddleware, async (req, res, next) => {
   try {
@@ -2693,13 +2921,8 @@ app.get('/api/events', async (req, res, next) => {
         return res.json(dbEvents);
       }
     }
-    // Fallback to initial seed mock events if DB has none or is offline
-    res.json([
-      { id: 'ev1', title: 'MHT-CET PCMB Full Syllabus Test 1 (Scheduled)', date: '2026-07-02 09:00 AM', type: 'Test', subject: 'General' },
-      { id: 'ev2', title: 'Physics & Chemistry Chapterwise Mock 1 (Scheduled)', date: '2026-06-28 02:00 PM', type: 'Test', subject: 'Physics' },
-      { id: 'ev3', title: 'Mathematics Special Vectors & Calculus Mock (Scheduled)', date: '2026-07-05 10:00 AM', type: 'Test', subject: 'Mathematics' },
-      { id: 'ev4', title: 'Organic Chemistry Revision Live Seminar', date: '2026-06-26 04:00 PM', type: 'Lecture', subject: 'Chemistry' }
-    ]);
+    // Return empty if no events in DB or offline
+    res.json([]);
   } catch (err) {
     next(err);
   }

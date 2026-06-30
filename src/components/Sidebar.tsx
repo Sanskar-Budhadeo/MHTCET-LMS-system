@@ -208,16 +208,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           className={`sidebar-link btn-block ${currentTab === 'teacher-dashboard' ? 'active' : ''}`}
         >
           <LayoutDashboard size={18} />
-          <span>Class Overview</span>
-        </button>
-      </li>
-      <li className="sidebar-item">
-        <button
-          onClick={() => handleTabClick('teacher-tracking')}
-          className={`sidebar-link btn-block ${currentTab === 'teacher-tracking' ? 'active' : ''}`}
-        >
-          <FileText size={18} />
-          <span>Exam Tracking</span>
+          <span>Dashboard (Overview)</span>
         </button>
       </li>
       <li className="sidebar-item">
@@ -226,7 +217,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           className={`sidebar-link btn-block ${currentTab === 'teacher-generator' ? 'active' : ''}`}
         >
           <PenTool size={18} />
-          <span>Test Generator</span>
+          <span>Test & Question Builder</span>
         </button>
       </li>
       <li className="sidebar-item">
@@ -235,7 +226,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           className={`sidebar-link btn-block ${currentTab === 'teacher-materials' ? 'active' : ''}`}
         >
           <BookOpen size={18} />
-          <span>Manage Materials</span>
+          <span>Curriculum Manager</span>
+        </button>
+      </li>
+      <li className="sidebar-item">
+        <button
+          onClick={() => handleTabClick('teacher-tracking')}
+          className={`sidebar-link btn-block ${currentTab === 'teacher-tracking' ? 'active' : ''}`}
+        >
+          <Activity size={18} />
+          <span>Student & Institute Analytics</span>
         </button>
       </li>
       <li className="sidebar-item">
@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
           className={`sidebar-link btn-block ${currentTab === 'teacher-feedback' ? 'active' : ''}`}
         >
           <MessageSquare size={18} />
-          <span>Manual Feedback</span>
+          <span>Doubt Resolution Hub</span>
         </button>
       </li>
     </>

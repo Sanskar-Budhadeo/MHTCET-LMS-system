@@ -17,11 +17,13 @@ import {
   Save, 
   Trash2, 
   Download,
-  GraduationCap
+  GraduationCap,
+  X,
+  Brain
 } from 'lucide-react';
 
 export const LearningView: React.FC = () => {
-  const { activeUser, notes, addNote, updateNote, deleteNote, upgradeUserPlan, attempts, questions, stats } = useLms();
+  const { activeUser, notes, addNote, updateNote, deleteNote, upgradeUserPlan, attempts, questions, stats, weakTopics } = useLms();
 
   // Upgrade state
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -83,6 +85,105 @@ export const LearningView: React.FC = () => {
 
   const dynamicProgress = getDynamicSyllabusProgress();
 
+  interface StudyPlanItem {
+    id: string;
+    title: string;
+    subject: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology';
+    topic: string;
+    difficulty: 'Easy' | 'Medium' | 'Hard';
+    estimatedTime: string;
+    actionableSteps: string[];
+    rationale: string;
+    resources: string[];
+    status: 'Pending' | 'Completed';
+  }
+
+  const getDailyStudyPlan = (): StudyPlanItem[] => {
+    const topicsToInclude = weakTopics.length > 0 ? weakTopics : ['Rotational Dynamics', 'Chemical Kinetics', 'Vectors'];
+    
+    return topicsToInclude.map((topic, index) => {
+      let subject: 'Physics' | 'Chemistry' | 'Mathematics' | 'Biology' = 'Physics';
+      let title = `Remedial Module: ${topic} Concept Clearance`;
+      let rationale = `Your recent attempt accuracy in ${topic} indicates a conceptual gap.`;
+      let steps = [
+        `Review the core definitions and formulas for ${topic}.`,
+        `Solve 10 practice questions from the Study Materials Repository.`,
+        `Take a micro-quiz in the AI Adaptive Quiz section.`,
+        `Draft a cheat sheet under 'My Notes Canvas' to summarize critical equations.`
+      ];
+      let time = '45 mins';
+      let difficulty: 'Easy' | 'Medium' | 'Hard' = 'Medium';
+      let resources = [`Syllabus notes for ${topic}`, `${topic} Video Guides`];
+
+      if (topic === 'Rotational Dynamics') {
+        subject = 'Physics';
+        title = 'Rotational Dynamics: Sphere Acceleration & Moment of Inertia';
+        time = '60 mins';
+        difficulty = 'Hard';
+        rationale = 'Your accuracy in rolling bodies dynamics is below 70%. Focus on moment of inertia equations.';
+        steps = [
+          'Study the moment of inertia for ring, disc, solid and hollow spheres.',
+          'Solve the inclined plane rolling acceleration formula derivation: $$a = \\frac{g \\sin\\theta}{1 + k^2/R^2}$$.',
+          'Attempt 5 rotational dynamics quiz questions in Adaptive Learning.',
+          'Save a copy of your derivation summary in notes canvas.'
+        ];
+        resources = ['Video Lesson: Rotational Dynamics - Spheres Rolling Acceleration', 'Physics Notes Module 2'];
+      } else if (topic === 'Chemical Kinetics') {
+        subject = 'Chemistry';
+        title = 'Chemical Kinetics: First-Order Reactions & Half-Life';
+        time = '50 mins';
+        difficulty = 'Medium';
+        rationale = 'First-order kinetics and rate constant calculations are weak areas in your profiles.';
+        steps = [
+          'Revise the first-order rate constant equation: $$k = \\frac{2.303}{t} \\log_{10}\\frac{[A]_0}{[A]_t}$$.',
+          'Review half-life relation $$t_{1/2} = \\frac{0.693}{k}$$ and verify it is concentration-independent.',
+          'Practice 8 numerical problems on rate constants.',
+          'Ask AI Tutor for Arrhenius activation energy derivation check.'
+        ];
+        resources = ['Video Lesson: Chemical Kinetics - First Order Rate Calculations', 'Chemistry PDF Formula List'];
+      } else if (topic === 'Vectors') {
+        subject = 'Mathematics';
+        title = 'Vectors: Cross Product & Shortest Distance between Lines';
+        time = '65 mins';
+        difficulty = 'Hard';
+        rationale = 'Vectors spatial visualization and cross product applications need reinforcement.';
+        steps = [
+          'Review the definition and properties of scalar triple product and cross product.',
+          'Learn the formula for shortest distance between two skew lines: $$d = \\frac{|(a_2 - a_1) \\cdot (b_1 \\times b_2)|}{|b_1 \\times b_2|}$$.',
+          'Solve 5 vector geometry problems.',
+          'Solve a live practice set in mock arena.'
+        ];
+        resources = ['Video Lesson: Vectors - 3D Cross Product Concept Mastery', 'Mathematics Handout: Line Geometry'];
+      } else if (topic === 'Photosynthesis') {
+        subject = 'Biology';
+        title = 'Photosynthesis: Calvin Cycle & Light Reactions';
+        time = '45 mins';
+        difficulty = 'Medium';
+        rationale = 'Photosynthetic pathways and dark cycle stages need consolidation.';
+        steps = [
+          'Compare light-dependent cyclic and non-cyclic photophosphorylation.',
+          'Detail the steps of carbon fixation in the Calvin Cycle (C3 pathway).',
+          'Complete a diagram check on the chloroplast Z-scheme.',
+          'Create a comparative summary note sheet.'
+        ];
+        resources = ['Biology Video Lesson: Carbon Pathways', 'Biology Handout: Calvin Cycle Details'];
+      }
+
+      return {
+        id: `plan_${index}`,
+        title,
+        subject,
+        topic,
+        difficulty,
+        estimatedTime: time,
+        actionableSteps: steps,
+        rationale,
+        resources,
+        status: 'Pending'
+      };
+    });
+  };
+
   const handleSimulatedUpgrade = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentProcessing(true);
@@ -100,6 +201,7 @@ export const LearningView: React.FC = () => {
 
   // Learning Tab state: 'videos' | 'notes' | 'materials'
   const [activeSubTab, setActiveSubTab] = useState<'videos' | 'notes' | 'materials'>('videos');
+  const [selectedPlanItem, setSelectedPlanItem] = useState<StudyPlanItem | null>(null);
 
   // Video portal state
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string>('');
@@ -715,48 +817,61 @@ export const LearningView: React.FC = () => {
             </form>
           </div>
 
-          {/* Daily Insights Widgets */}
-          <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, borderBottom: '1px solid var(--border)', paddingBottom: '10px', marginBottom: '14px' }}>
-              Daily Learning Insights
+          {/* AI Suggested Daily Study Plan */}
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, borderBottom: '1px solid var(--border)', paddingBottom: '10px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Brain size={18} style={{ color: 'var(--accent)' }} /> AI Suggested Daily Study Plan
             </h3>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Study hours */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ backgroundColor: 'var(--primary-light)', padding: '8px', borderRadius: '8px', color: 'var(--accent)' }}>
-                  <Clock size={20} />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Daily Study Hours</span>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>{stats.hoursStudied.toFixed(2)} Hours completed</h4>
-                </div>
-              </div>
-
-              {/* Learning progress */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ backgroundColor: '#ecfdf5', padding: '8px', borderRadius: '8px', color: '#10b981' }}>
-                  <TrendingUp size={20} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Syllabus Coverage Progress</span>
-                  <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--border)', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-                    <div style={{ width: `${dynamicProgress}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '4px' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
+              {getDailyStudyPlan().map(item => (
+                <div 
+                  key={item.id}
+                  onClick={() => setSelectedPlanItem(item)}
+                  className="card"
+                  style={{
+                    padding: '12px',
+                    boxShadow: 'none',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    backgroundColor: 'var(--primary-light)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.transform = 'none';
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className={`badge badge-${item.subject.toLowerCase()}`} style={{ fontSize: '0.65rem', textTransform: 'uppercase' }}>
+                      {item.subject}
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-light)', fontWeight: 600 }}>
+                      {item.estimatedTime}
+                    </span>
                   </div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>{dynamicProgress}% Coverage</span>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    {item.title}
+                  </h4>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--accent)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    View details & steps →
+                  </span>
                 </div>
-              </div>
-
-              {/* AI Predicted Rank */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ backgroundColor: '#fffbeb', padding: '8px', borderRadius: '8px', color: '#f59e0b' }}>
-                  <Award size={20} />
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>AI-Predicted National Rank</span>
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Rank #{stats.siteRank || 4} (based on site history)</h4>
-                </div>
-              </div>
+              ))}
+              
+              {getDailyStudyPlan().length === 0 && (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>
+                  No study suggestions. Complete mock tests to see custom recommendations!
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -865,6 +980,112 @@ export const LearningView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI Study Plan Details Modal */}
+      {selectedPlanItem && (
+        <div className="fixed inset-0 bg-[#09090b] z-[9999] flex flex-col overflow-hidden select-text animate-fade-in text-slate-100">
+          <div className="w-full h-full max-w-7xl mx-auto p-6 md:p-10 flex flex-col justify-between overflow-hidden relative">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-5 mb-5 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className={`badge badge-${selectedPlanItem.subject.toLowerCase()}`} style={{ fontSize: '0.7rem', textTransform: 'uppercase' }}>
+                  {selectedPlanItem.subject}
+                </span>
+                <span className="bg-zinc-900 border border-zinc-800 text-slate-300 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                  Est. Time: {selectedPlanItem.estimatedTime}
+                </span>
+              </div>
+              <button 
+                onClick={() => setSelectedPlanItem(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-light)', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Split Grid Content */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden min-h-0">
+              
+              {/* Left Column: Info & Materials */}
+              <div className="lg:col-span-5 flex flex-col gap-6 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                <div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{selectedPlanItem.subject} Section</span>
+                  <h3 className="text-2xl font-black text-white mt-1 leading-snug">{selectedPlanItem.title}</h3>
+                </div>
+
+                <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 shadow-md">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2">AI Analysis & Rationale</span>
+                  <p className="text-xs text-slate-300 leading-relaxed font-semibold italic">"{selectedPlanItem.rationale}"</p>
+                </div>
+
+                {selectedPlanItem.resources && selectedPlanItem.resources.length > 0 && (
+                  <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 shadow-md">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-3">Recommended Study Material</span>
+                    <div className="flex flex-col gap-3">
+                      {selectedPlanItem.resources.map((res, idx) => (
+                        <div key={idx} className="bg-[#09090b] border border-zinc-900/60 p-3 rounded-xl flex items-center justify-between hover:border-zinc-700 transition cursor-pointer">
+                          <span className="text-xs text-slate-200 font-bold flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-[#e2fc5c]" />
+                            {res}
+                          </span>
+                          <span className="text-[#e2fc5c] text-[9px] font-black uppercase">Open Resource →</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Interactive Checklist */}
+              <div className="lg:col-span-7 bg-[#121214] border border-zinc-900 rounded-2xl p-6 flex flex-col justify-between overflow-hidden h-full shadow-md">
+                <div className="flex flex-col gap-4 overflow-hidden flex-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block border-b border-zinc-900 pb-2">
+                    Actionable Study Checklist Steps
+                  </span>
+                  
+                  <div className="flex-1 overflow-y-auto pr-1 space-y-3 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                    {selectedPlanItem.actionableSteps.map((step, idx) => (
+                      <label 
+                        key={idx} 
+                        className="flex items-start gap-4 p-4 bg-[#09090b]/80 border border-zinc-900 rounded-xl hover:border-zinc-700 transition cursor-pointer select-none group"
+                        style={{ display: 'flex' }}
+                      >
+                        <input 
+                          type="checkbox" 
+                          className="mt-1 w-4 h-4 accent-[#e2fc5c] rounded border-zinc-700 bg-zinc-900 cursor-pointer" 
+                          style={{ marginRight: '12px' }}
+                        />
+                        <div className="flex-1">
+                          <span className="text-xs text-slate-300 leading-relaxed font-semibold group-hover:text-white transition">
+                            {formatTutorReply(step)}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center border-t border-zinc-900 pt-4 mt-4 flex-shrink-0" style={{ display: 'flex' }}>
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Syllabus Priority</span>
+                    <span className="text-xs font-black text-amber-400 uppercase">{selectedPlanItem.difficulty} Level</span>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedPlanItem(null)}
+                    className="btn btn-primary"
+                    style={{ padding: '10px 24px', fontSize: '0.8rem', fontWeight: 900 }}
+                  >
+                    Mark Task Complete & Close
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}

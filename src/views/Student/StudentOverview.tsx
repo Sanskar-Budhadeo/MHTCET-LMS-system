@@ -171,51 +171,64 @@ export const TasksChecklist: React.FC<TasksChecklistProps> = ({
 interface WeeklyHoursChartProps {
   hoursStudied: number;
   loginDates: string[];
+  weeklyActivityList?: { dayName: string; dateStr: string; hours: number }[];
 }
 
-export const WeeklyHoursChart: React.FC<WeeklyHoursChartProps> = ({ hoursStudied, loginDates }) => {
-  // Generate last 7 days list
-  const getLast7Days = () => {
-    const days = [];
-    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(today.getDate() - i);
-      days.push({
-        dateStr: d.toISOString().split('T')[0],
-        dayName: weekdayNames[d.getDay()],
-        rawDate: d
-      });
-    }
-    return days;
-  };
+export const WeeklyHoursChart: React.FC<WeeklyHoursChartProps> = ({ hoursStudied, loginDates, weeklyActivityList }) => {
+  let data;
+  let weeklyTotal = parseFloat(hoursStudied.toFixed(1));
+  let dailyAverage = parseFloat((hoursStudied / 7).toFixed(1));
 
-  const days = getLast7Days();
-  
-  // Calculate weights based on logins & days
-  const weights = days.map(d => {
-    const isToday = d.dateStr === new Date().toISOString().split('T')[0];
-    const isLoginDay = loginDates.includes(d.dateStr);
-    if (isToday) return 1.5;
-    if (isLoginDay) return 1.0;
-    const dayOfWeek = d.rawDate.getDay();
-    const mockWeight = [0.2, 0.8, 1.2, 0.7, 0.9, 1.4, 0.5][dayOfWeek];
-    return mockWeight;
-  });
-
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  const data = days.map((d, idx) => {
-    const hours = (weights[idx] / totalWeight) * hoursStudied;
-    return {
-      day: d.dayName,
-      hours: parseFloat(hours.toFixed(1)),
-      date: d.dateStr
+  if (weeklyActivityList && weeklyActivityList.length > 0) {
+    data = weeklyActivityList.map(item => ({
+      day: item.dayName,
+      hours: parseFloat(item.hours.toFixed(1)),
+      date: item.dateStr
+    }));
+    const actualTotal = weeklyActivityList.reduce((sum, item) => sum + item.hours, 0);
+    weeklyTotal = parseFloat(actualTotal.toFixed(1));
+    dailyAverage = parseFloat((actualTotal / 7).toFixed(1));
+  } else {
+    // Generate last 7 days list
+    const getLast7Days = () => {
+      const days = [];
+      const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const today = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(today.getDate() - i);
+        days.push({
+          dateStr: d.toISOString().split('T')[0],
+          dayName: weekdayNames[d.getDay()],
+          rawDate: d
+        });
+      }
+      return days;
     };
-  });
 
-  const weeklyTotal = parseFloat(hoursStudied.toFixed(1));
-  const dailyAverage = parseFloat((hoursStudied / 7).toFixed(1));
+    const days = getLast7Days();
+    
+    // Calculate weights based on logins & days
+    const weights = days.map(d => {
+      const isToday = d.dateStr === new Date().toISOString().split('T')[0];
+      const isLoginDay = loginDates.includes(d.dateStr);
+      if (isToday) return 1.5;
+      if (isLoginDay) return 1.0;
+      const dayOfWeek = d.rawDate.getDay();
+      const mockWeight = [0.2, 0.8, 1.2, 0.7, 0.9, 1.4, 0.5][dayOfWeek];
+      return mockWeight;
+    });
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    data = days.map((d, idx) => {
+      const hours = (weights[idx] / totalWeight) * hoursStudied;
+      return {
+        day: d.dayName,
+        hours: parseFloat(hours.toFixed(1)),
+        date: d.dateStr
+      };
+    });
+  }
 
   // Premium Custom Tooltip Component
   const CustomTooltip = ({ active, payload }: any) => {
@@ -369,7 +382,7 @@ export const AchievementBadges: React.FC<AchievementBadgesProps> = ({ rank, stre
 // Main Component: StudentOverview
 // ----------------------------------------------------
 export const StudentOverview: React.FC = () => {
-  const { activeUser } = useLms();
+  const { activeUser, attempts } = useLms();
 
   // Load Tailwind CDN dynamically to parse utility classes if not already globally configured
   useEffect(() => {
@@ -404,8 +417,16 @@ export const StudentOverview: React.FC = () => {
   // State from real API calls
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    const saved = localStorage.getItem('student_overview_tasks');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [newTaskText, setNewTaskText] = useState('');
+
+  // Persist tasks in localStorage fallback to prevent loss on refresh
+  useEffect(() => {
+    localStorage.setItem('student_overview_tasks', JSON.stringify(tasks));
+  }, [tasks]);
 
   // Fetch Dashboard Data from MERN Backend
   useEffect(() => {
@@ -519,8 +540,39 @@ export const StudentOverview: React.FC = () => {
   const studentPrn = dashboardData?.prn || activeUser?.prn || 'MHT202684730';
   const billingId = dashboardData?.billingId || 'INV-1782305377435-7748';
   const plan = dashboardData?.plan || 'Free';
-  const accuracyIndex = dashboardData?.accuracyIndex ?? 37;
-  const streak = dashboardData?.streak ?? 0;
+  const sortedAttempts = [...attempts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const accuracyIndex = sortedAttempts.length > 0 ? sortedAttempts[0].accuracy : (dashboardData?.accuracyIndex ?? 37);
+
+  const calculateStreak = (dates: string[]): number => {
+    if (!dates || dates.length === 0) return 0;
+    const sortedDates = [...dates]
+      .map(d => new Date(d).toISOString().split('T')[0])
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    let streakCount = 0;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0,0,0,0);
+    const todayStr = today.toISOString().split('T')[0];
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    if (!sortedDates.includes(todayStr) && !sortedDates.includes(yesterdayStr)) {
+      return 0;
+    }
+    let checkDate = sortedDates.includes(todayStr) ? today : yesterday;
+    while (true) {
+      const dateStr = checkDate.toISOString().split('T')[0];
+      if (sortedDates.includes(dateStr)) {
+        streakCount++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    return streakCount;
+  };
+  const streak = activeUser?.loginDates ? calculateStreak(activeUser.loginDates) : (dashboardData?.streak ?? 0);
   const hoursStudied = dashboardData?.hoursStudied ?? 0;
   const upcomingEvents = dashboardData?.upcomingEvents || [];
   const rank = dashboardData?.rank ?? 4;
@@ -678,6 +730,7 @@ export const StudentOverview: React.FC = () => {
           <WeeklyHoursChart 
             hoursStudied={hoursStudied} 
             loginDates={dashboardData?.loginDates || activeUser?.loginDates || []} 
+            weeklyActivityList={dashboardData?.weeklyActivityList}
           />
         </div>
 

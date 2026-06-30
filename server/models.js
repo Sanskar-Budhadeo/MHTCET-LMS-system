@@ -245,6 +245,11 @@ const UserSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  weeklyActivity: {
+    type: Map,
+    of: Number,
+    default: {}
+  },
   savedNotes: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Note',
@@ -344,3 +349,11 @@ const CalendarEventSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const CalendarEvent = mongoose.model('CalendarEvent', CalendarEventSchema);
+
+const AuditLogSchema = new mongoose.Schema({
+  action: { type: String, required: true },
+  details: { type: String },
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+export const AuditLog = mongoose.model('AuditLog', AuditLogSchema);

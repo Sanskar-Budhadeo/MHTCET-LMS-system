@@ -232,11 +232,11 @@ export const StudentAnalysis: React.FC = () => {
       
       {/* Detailed Analysis Modal / slideover */}
       {selectedSubject && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[9999] p-4">
-          <div className="bg-[#121214] border border-[#27272a] rounded-3xl p-6 max-w-4xl w-full h-[90vh] shadow-2xl flex flex-col justify-between overflow-hidden relative">
+        <div className="fixed inset-0 bg-[#09090b] z-[9999] flex flex-col overflow-hidden select-text animate-fade-in">
+          <div className="w-full h-full max-w-7xl mx-auto p-6 md:p-10 flex flex-col justify-between overflow-hidden relative">
             
             {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-zinc-800 pb-5 mb-5">
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-5 mb-5 flex-shrink-0">
               <div className="flex items-center gap-4">
                 <div className="relative w-14 h-14 flex items-center justify-center">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
@@ -274,20 +274,121 @@ export const StudentAnalysis: React.FC = () => {
               </button>
             </div>
 
-            {/* Scrollable Modal Content */}
-            <div className="flex-1 overflow-y-auto pr-1 space-y-6 scrollbar-thin scrollbar-thumb-zinc-850 scrollbar-track-transparent">
+            {/* Split Grid Content */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden min-h-0">
               
-              {/* Row 1: Chapter & Topic mastery bars */}
-              <div className="bg-[#09090b] border border-zinc-900 rounded-2xl p-6 flex flex-col gap-6 shadow-inner">
-                <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+              {/* Left Column - Diagnostic Summary */}
+              <div className="lg:col-span-5 flex flex-col gap-6 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                
+                {/* Overall Stats Quick Card */}
+                <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-3 shadow-md">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">AI Subject Performance Rating</span>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-black ${selectedSubject.textColor}`}>{selectedSubject.percentage}%</span>
+                    <div className="flex-1 h-3 bg-[#09090b] border border-zinc-900 rounded-full overflow-hidden">
+                      <div className={`${selectedSubject.color} h-full rounded-full transition-all`} style={{ width: `${selectedSubject.percentage}%` }} />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                    Syllabus mastery is calculated based on accuracy, correct/incorrect ratio, and chapter weightages.
+                  </p>
+                </div>
+
+                {/* Strong & Weak Areas Card */}
+                <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2 border-b border-zinc-900/60 pb-2">
+                      <CheckCircle className="w-4 h-4 text-emerald-400" /> Strongest Concept Mastery
+                    </span>
+                    <div className="flex flex-wrap gap-2 mt-2.5">
+                      {selectedSubject.strongAreas.map((area, idx) => (
+                        <span key={idx} className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 rounded-full px-3 py-1 text-[9px] font-bold shadow-sm">
+                          🎯 {area}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-2">
+                    <span className="text-[10px] font-black uppercase text-red-400 tracking-wider flex items-center gap-2 border-b border-zinc-900/60 pb-2">
+                      <AlertTriangle className="w-4 h-4 text-red-400" /> Areas of Improvement
+                    </span>
+                    <div className="flex flex-wrap gap-2 mt-2.5">
+                      {selectedSubject.weakAreas.map((area, idx) => (
+                        <span key={idx} className="bg-red-950/40 border border-red-500/20 text-red-400 rounded-full px-3 py-1 text-[9px] font-bold shadow-sm">
+                          ⚠️ {area}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recurring Mistake Patterns Card */}
+                <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
+                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider border-b border-zinc-900 pb-2 flex items-center gap-1.5">
+                    ⚙️ Recurring Mistake Patterns
+                  </span>
+                  <div className="space-y-3">
+                    {selectedSubject.mistakePatterns.map((pat, idx) => (
+                      <div key={idx} className="border-b border-zinc-900/50 pb-3 last:border-0 last:pb-0 flex flex-col gap-1">
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
+                          <span>{pat.pattern}</span>
+                          <span className="text-[8px] font-black text-amber-400 uppercase bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded">
+                            {pat.frequency}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-semibold leading-relaxed mt-0.5">{pat.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conceptual Gaps Card */}
+                <div className="bg-[#121214] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
+                  <span className="text-[10px] font-black uppercase text-red-400 tracking-wider border-b border-zinc-900 pb-2 flex items-center gap-1.5">
+                    📖 Core Conceptual Gaps
+                  </span>
+                  <div className="space-y-3">
+                    {selectedSubject.conceptGaps.map((gap, idx) => (
+                      <div key={idx} className="border-b border-zinc-900/50 pb-3 last:border-0 last:pb-0 flex flex-col gap-1">
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
+                          <span>{gap.gap}</span>
+                          <span className="text-[8px] font-black text-red-400 uppercase bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded">
+                            {gap.severity}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-semibold leading-relaxed mt-0.5">{gap.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Faculty Feedback Note */}
+                <div className="border-l-4 border-[#e2fc5c] bg-[#121214]/60 p-5 rounded-r-2xl border-y border-r border-zinc-900 shadow-md">
+                  <span className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    ✍️ Faculty Evaluator Assessment & Action Guidelines
+                  </span>
+                  <p className="text-[11px] text-slate-100 leading-relaxed font-semibold italic">
+                    "{selectedSubject.facultyNote}"
+                  </p>
+                  <span className="block text-[9px] text-right font-black text-sky-400 mt-3">
+                    - {selectedSubject.facultyTeacher}
+                  </span>
+                </div>
+
+              </div>
+
+              {/* Right Column - Chapter & Topic Mastery Breakdown */}
+              <div className="lg:col-span-7 bg-[#121214] border border-zinc-900 rounded-2xl p-6 flex flex-col gap-6 shadow-md overflow-hidden h-full">
+                <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 flex-shrink-0">
                   <BarChart2 className="w-4 h-4 text-[#e2fc5c]" /> Chapter & Topic Mastery Breakdown
                 </h4>
-                
-                <div className="grid grid-cols-1 gap-5">
+
+                <div className="flex-1 overflow-y-auto pr-1 space-y-4 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
                   {selectedSubject.chapters.map((chapter, cIdx) => (
                     <div 
                       key={cIdx} 
-                      className="border border-zinc-900/60 bg-[#121214]/40 hover:bg-[#121214]/60 p-4 rounded-xl flex flex-col gap-3 transition duration-200"
+                      className="border border-zinc-900 bg-[#09090b]/60 hover:bg-[#09090b]/80 p-4 rounded-xl flex flex-col gap-3 transition duration-200"
                     >
                       <div className="flex justify-between items-center text-xs font-bold">
                         <span className="text-slate-100 text-sm">{chapter.name}</span>
@@ -333,92 +434,9 @@ export const StudentAnalysis: React.FC = () => {
                 </div>
               </div>
 
-              {/* Row 2: Strong & Weak Areas */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="bg-[#09090b] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
-                  <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider flex items-center gap-2 border-b border-zinc-900 pb-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-400" /> High Concept Mastery Areas
-                  </span>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {selectedSubject.strongAreas.map((area, idx) => (
-                      <span key={idx} className="bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 rounded-full px-3 py-1 text-[9px] font-bold shadow-sm flex items-center gap-1">
-                        🎯 {area}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-[#09090b] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
-                  <span className="text-[10px] font-black uppercase text-red-400 tracking-wider flex items-center gap-2 border-b border-zinc-900 pb-2">
-                    <AlertTriangle className="w-4 h-4 text-red-400" /> Critical Weak Spot Gaps
-                  </span>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {selectedSubject.weakAreas.map((area, idx) => (
-                      <span key={idx} className="bg-red-950/40 border border-red-500/20 text-red-400 rounded-full px-3 py-1 text-[9px] font-bold shadow-sm flex items-center gap-1">
-                        ⚠️ {area}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 3: Mistakes & Concept Gaps */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="bg-[#09090b] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
-                  <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider border-b border-zinc-900 pb-2 flex items-center gap-1.5">
-                    ⚙️ Recurring Mistake Patterns
-                  </span>
-                  <div className="space-y-3 mt-1">
-                    {selectedSubject.mistakePatterns.map((pat, idx) => (
-                      <div key={idx} className="border-b border-zinc-900/50 pb-3 last:border-0 last:pb-0 flex flex-col gap-1">
-                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                          <span>{pat.pattern}</span>
-                          <span className="text-[8px] font-black text-amber-400 uppercase bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded">
-                            {pat.frequency}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-semibold leading-relaxed mt-0.5">{pat.desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-[#09090b] border border-zinc-900 rounded-2xl p-5 flex flex-col gap-4 shadow-md">
-                  <span className="text-[10px] font-black uppercase text-red-400 tracking-wider border-b border-zinc-900 pb-2 flex items-center gap-1.5">
-                    📖 Core Conceptual Gaps
-                  </span>
-                  <div className="space-y-3 mt-1">
-                    {selectedSubject.conceptGaps.map((gap, idx) => (
-                      <div key={idx} className="border-b border-zinc-900/50 pb-3 last:border-0 last:pb-0 flex flex-col gap-1">
-                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
-                          <span>{gap.gap}</span>
-                          <span className="text-[8px] font-black text-red-400 uppercase bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded">
-                            {gap.severity}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-semibold leading-relaxed mt-0.5">{gap.desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 4: Faculty Feedback Note */}
-              <div className="border-l-4 border-[#e2fc5c] bg-[#121214]/60 p-5 rounded-r-2xl border-y border-r border-zinc-900 shadow-md">
-                <span className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                  ✍️ Faculty Evaluator Assessment & Action Guidelines
-                </span>
-                <p className="text-[11px] text-slate-100 leading-relaxed font-semibold italic">
-                  "{selectedSubject.facultyNote}"
-                </p>
-                <span className="block text-[9px] text-right font-black text-sky-400 mt-3">
-                  - {selectedSubject.facultyTeacher}
-                </span>
-              </div>
-
             </div>
 
-            <div className="text-center text-[9px] text-slate-500 mt-4 font-semibold border-t border-zinc-850 pt-3">
+            <div className="text-center text-[9px] text-slate-500 mt-4 font-semibold border-t border-zinc-850 pt-3 flex-shrink-0">
               MHT-CET Platform Diagnostics Engine v1.0.0
             </div>
 

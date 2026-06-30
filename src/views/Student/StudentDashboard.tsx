@@ -29,6 +29,40 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
   const diffTime = examDate.getTime() - now.getTime();
   const countdownDaysLeft = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
+  const sortedAttempts = [...attempts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const lastExamAccuracy = sortedAttempts.length > 0 ? sortedAttempts[0].accuracy : stats.avgAccuracy;
+
+  const calculateStreak = (dates: string[]): number => {
+    if (!dates || dates.length === 0) return 0;
+    const sortedDates = [...dates]
+      .map(d => new Date(d).toISOString().split('T')[0])
+      .filter((value, index, self) => self.indexOf(value) === index)
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    let streakCount = 0;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0,0,0,0);
+    const todayStr = today.toISOString().split('T')[0];
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    if (!sortedDates.includes(todayStr) && !sortedDates.includes(yesterdayStr)) {
+      return 0;
+    }
+    let checkDate = sortedDates.includes(todayStr) ? today : yesterday;
+    while (true) {
+      const dateStr = checkDate.toISOString().split('T')[0];
+      if (sortedDates.includes(dateStr)) {
+        streakCount++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    return streakCount;
+  };
+  const activeStreak = activeUser?.loginDates ? calculateStreak(activeUser.loginDates) : stats.streaks;
+
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [upgradePlan, setUpgradePlan] = useState<'Pro' | 'Premium'>('Pro');
@@ -302,7 +336,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
               <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>{stats.totalTests} tests</span>
             </div>
             <div style={{ fontSize: '2.5rem', fontWeight: 800, margin: '12px 0 4px', fontFamily: 'var(--font-display)' }}>
-              {stats.totalTests > 0 ? `${stats.avgAccuracy}%` : '0%'}
+              {stats.totalTests > 0 ? `${lastExamAccuracy}%` : '0%'}
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Daily goal progress: {stats.dailyGoalProgress}%
@@ -311,7 +345,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
           {/* Custom cylindrical progress indicators */}
           <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
             {[1, 2, 3, 4, 5].map((idx) => {
-              const activeCount = Math.ceil(stats.avgAccuracy / 20);
+              const activeCount = Math.ceil(lastExamAccuracy / 20);
               return (
                 <div 
                   key={idx} 
@@ -336,7 +370,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
               <span className="badge" style={{ fontSize: '0.65rem', backgroundColor: 'rgba(9,9,11,0.08)', color: '#09090b' }}>Daily drill</span>
             </div>
             <div style={{ fontSize: '2.5rem', fontWeight: 800, margin: '12px 0 4px', fontFamily: 'var(--font-display)' }}>
-              {stats.streaks} Days
+              {activeStreak} Days
             </div>
             <div style={{ fontSize: '0.75rem', color: 'rgba(9, 9, 11, 0.6)' }}>
               Hours Studied: {stats.hoursStudied} hrs
@@ -345,7 +379,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ setCurrentTa
           {/* Custom cylindrical indicators */}
           <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
             {[1, 2, 3, 4, 5].map((idx) => {
-              const activeCount = Math.min(stats.streaks, 5);
+              const activeCount = Math.min(activeStreak, 5);
               return (
                 <div 
                   key={idx} 

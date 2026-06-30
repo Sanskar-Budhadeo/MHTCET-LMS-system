@@ -306,11 +306,16 @@ export const LandingPage: React.FC = () => {
 
   const handleRoleChange = (role: 'student' | 'parent' | 'admin' | 'teacher' | 'executive') => {
     setSelectedRole(role);
-    if (role === 'student') setEmail('rahul@cet.com');
-    else if (role === 'parent') setEmail('parent.rahul@cet.com');
-    else if (role === 'teacher') setEmail('teacher@demo.com');
-    else if (role === 'executive') setEmail('executive@demo.com');
-    else setEmail('sharma.sir@cet.com');
+    if (isSignUp) {
+      setEmail('');
+      setPassword('');
+    } else {
+      if (role === 'student') setEmail('rahul@cet.com');
+      else if (role === 'parent') setEmail('parent.rahul@cet.com');
+      else if (role === 'teacher') setEmail('teacher@demo.com');
+      else if (role === 'executive') setEmail('executive@demo.com');
+      else setEmail('sharma.sir@cet.com');
+    }
     setErrorMsg('');
   };
 
@@ -421,12 +426,12 @@ export const LandingPage: React.FC = () => {
             name, 
             email, 
             password, 
-            role: 'student',
-            targetCourse,
-            targetExam,
-            plan,
-            parentName,
-            parentEmail,
+            role: selectedRole,
+            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
+            targetExam: selectedRole === 'student' ? targetExam : undefined,
+            plan: selectedRole === 'student' ? plan : undefined,
+            parentName: selectedRole === 'student' ? parentName : undefined,
+            parentEmail: selectedRole === 'student' ? parentEmail : undefined,
           }
         : selectedRole === 'parent'
           // Parent login: email + child PRN — no password sent
@@ -460,16 +465,16 @@ export const LandingPage: React.FC = () => {
         const expectedPassword = DEMO_PASSWORDS[normalizedEmail];
 
         if (isSignUp) {
-          // For sign-up in offline mode: create a mock new user (always student)
+          // For sign-up in offline mode: create a mock new user
           const newUser = {
             id: 'u_new_' + Date.now(),
             name: name.trim() || 'New User',
             email: normalizedEmail,
-            role: 'student',
-            streak: 0,
-            plan,
-            targetCourse,
-            targetExam,
+            role: selectedRole,
+            streak: selectedRole === 'student' ? 0 : undefined,
+            plan: selectedRole === 'student' ? plan : undefined,
+            targetCourse: selectedRole === 'student' ? targetCourse : undefined,
+            targetExam: selectedRole === 'student' ? targetExam : undefined,
             loginDates: [],
           };
           login(newUser as any, 'offline-demo-token');
@@ -800,6 +805,38 @@ export const LandingPage: React.FC = () => {
             )}
 
             <form onSubmit={handleLoginSubmit}>
+              {isSignUp && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="form-label" style={{ marginBottom: '8px', display: 'block', textAlign: 'center' }}>Create Account As</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                    {(['student', 'teacher', 'admin'] as const).map((r) => {
+                      const isActive = selectedRole === r;
+                      const label = r === 'student' ? 'Student' : r === 'teacher' ? 'Teacher' : 'Admin';
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => handleRoleChange(r)}
+                          style={{
+                            fontSize: '0.75rem',
+                            padding: '10px 8px',
+                            borderRadius: '12px',
+                            border: isActive ? '2px solid var(--accent)' : '2px solid var(--border)',
+                            backgroundColor: isActive ? 'rgba(210, 255, 61, 0.12)' : 'var(--bg-card)',
+                            color: isActive ? 'var(--accent)' : 'var(--text-main)',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'var(--transition)'
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {isSignUp && (
                 <div className="form-group">
                   <label className="form-label">Full Name</label>

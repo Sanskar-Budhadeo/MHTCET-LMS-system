@@ -396,6 +396,7 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    fetchStats();
     return attemptId;
   };
 
