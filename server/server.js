@@ -102,130 +102,150 @@ mongoose.connect(process.env.MONGODB_URI)
           loginDates: []
         });
 
-        // 5. Create questions if not existing
-        let qCount = await Question.countDocuments();
-        if (qCount === 0) {
-          console.log('[DATABASE] Seeding initial mock questions...');
-          await Question.create([
-            {
-              subject: 'Physics',
-              chapter: 'Rotational Dynamics',
-              difficulty: 'Medium',
-              question_text: 'A thin uniform circular ring of mass M and radius R is rotating about its geometric axis with a constant angular velocity omega...',
-              options: { A: 'M * omega / (M + 2m)', B: '(M + 2m) * omega / M', C: 'M * omega / (M + m)', D: '(M - 2m) * omega / (M + 2m)' },
-              correct_option: 'A',
-              explanation: 'By the law of conservation of angular momentum: I1 * omega1 = I2 * omega2.',
-              generated_by: 'ai'
+        // 5. Create questions (always delete first to ensure exact 50 PCM questions)
+        await Question.deleteMany({});
+        console.log('[DATABASE] Seeding 50 PCM questions...');
+        
+        const pcmQuestions = [];
+        const physicsChapters = ['Rotational Dynamics', 'Oscillations', 'Electrostatics', 'Wave Optics'];
+        const chemistryChapters = ['Chemical Kinetics', 'Solid State', 'Coordination Compounds'];
+        const mathChapters = ['Vectors', 'Trigonometric Functions', 'Probability Distributions'];
+        
+        for (let i = 1; i <= 50; i++) {
+          let subject = '';
+          let chapter = '';
+          let correct_option = ['A', 'B', 'C', 'D'][i % 4];
+          let qMarks = 1;
+          
+          if (i <= 17) {
+            subject = 'Physics';
+            chapter = physicsChapters[i % physicsChapters.length];
+          } else if (i <= 34) {
+            subject = 'Chemistry';
+            chapter = chemistryChapters[i % chemistryChapters.length];
+          } else {
+            subject = 'Mathematics';
+            chapter = mathChapters[i % mathChapters.length];
+            qMarks = 2;
+          }
+          
+          pcmQuestions.push({
+            subject: subject,
+            chapter: chapter,
+            difficulty: i % 3 === 0 ? 'Hard' : i % 3 === 1 ? 'Medium' : 'Easy',
+            question_text: `PCM Full Syllabus Practice Question #${i}: What is the value or application in ${subject} chapter ${chapter}?`,
+            options: { 
+              A: `Option A for Q${i}`, 
+              B: `Option B for Q${i}`, 
+              C: `Option C for Q${i}`, 
+              D: `Option D for Q${i}` 
             },
-            {
-              subject: 'Physics',
-              chapter: 'Rotational Dynamics',
-              difficulty: 'Hard',
-              question_text: 'A solid sphere rolls down an inclined plane of inclination theta without slipping...',
-              options: { A: 'g * sin(theta)', B: '(5/7) * g * sin(theta)', C: '(2/3) * g * sin(theta)', D: '(2/7) * g * sin(theta)' },
-              correct_option: 'B',
-              explanation: 'Acceleration a = g * sin(theta) / (1 + k^2/R^2).',
-              generated_by: 'ai'
-            },
-            {
-              subject: 'Mathematics',
-              chapter: 'Vectors',
-              difficulty: 'Medium',
-              question_text: 'Find the area of the parallelogram whose diagonals are represented by the vectors d1 = 3i + j - 2k and d2 = i - 3j + 4k.',
-              options: { A: '5 * sqrt(3) sq. units', B: 'sqrt(300) sq. units', C: '5 * sqrt(2) sq. units', D: '5 * sqrt(3) / 2 sq. units' },
-              correct_option: 'A',
-              explanation: 'The area of a parallelogram given its diagonals is (1/2) * |d1 x d2|.',
-              generated_by: 'ai'
-            }
-          ]);
+            correct_option: correct_option,
+            explanation: `Standard ${subject} derivation and numerical formulas for ${chapter}.`,
+            generated_by: 'ai'
+          });
         }
+        
+        const seededQuestions = await Question.create(pcmQuestions);
+        const qIds = seededQuestions.map(q => q._id);
 
-        const questionDocs = await Question.find();
+        // Clear all existing mock tests and test attempts first
+        await TestAttempt.deleteMany({});
+        await MockTest.deleteMany({});
+
         const responses = [];
-        if (questionDocs.length > 0) {
+        if (seededQuestions.length > 0) {
           responses.push({
-            questionId: questionDocs[0]._id,
+            questionId: seededQuestions[0]._id,
             selectedOption: 'A',
             isCorrect: true,
             timeSpent: 250,
-            chapter: questionDocs[0].chapter,
-            subject: questionDocs[0].subject
+            chapter: seededQuestions[0].chapter,
+            subject: seededQuestions[0].subject
           });
         }
-        if (questionDocs.length > 1) {
+        if (seededQuestions.length > 1) {
           responses.push({
-            questionId: questionDocs[1]._id,
+            questionId: seededQuestions[1]._id,
             selectedOption: 'A',
             isCorrect: false,
             timeSpent: 350,
-            chapter: questionDocs[1].chapter,
-            subject: questionDocs[1].subject
+            chapter: seededQuestions[1].chapter,
+            subject: seededQuestions[1].subject
           });
         }
-        if (questionDocs.length > 2) {
+        if (seededQuestions.length > 2) {
           responses.push({
-            questionId: questionDocs[2]._id,
+            questionId: seededQuestions[2]._id,
             selectedOption: 'A',
             isCorrect: true,
             timeSpent: 400,
-            chapter: questionDocs[2].chapter,
-            subject: questionDocs[2].subject
+            chapter: seededQuestions[2].chapter,
+            subject: seededQuestions[2].subject
           });
         }
 
         const attempt1 = await TestAttempt.create({
           student_id: student._id.toString(),
-          test_name: 'MHT-CET PCMB Full Syllabus Test 1',
+          test_name: 'MHT-CET Rotational Dynamics Practice Quiz',
           examType: 'MHT-CET',
-          score: 11,
-          max_score: 17,
-          time_spent_seconds: 3600,
-          accuracy: 64,
-          percentile: 82.5,
-          nationalRank: 1245,
+          score: 85,
+          max_score: 100,
+          time_spent_seconds: 2400,
+          accuracy: 85,
+          percentile: 91.2,
+          nationalRank: 102,
           responses: responses,
           ai_analysis: {
-            weak_topics: ['Rotational Dynamics Friction', 'Vectors Cross Product'],
-            time_management_rating: 'Average (approx 210 seconds per math question)',
-            student_feedback: 'Rahul, you demonstrated good calculus precision. Focus on practicing cross products and sphere inertia acceleration formulas.',
-            parent_feedback: 'Rahul\'s math accuracy is high, but rotational dynamics remains a weakness. Daily study plans are targeting this.'
+            weak_topics: ['Rotational Dynamics Friction'],
+            time_management_rating: 'Excellent speed control',
+            student_feedback: 'Rahul, strong performance. Review banking of roads friction equations.',
+            parent_feedback: 'Rahul did exceptionally well on this test. Continued revisions are underway.'
           },
           feedback: {
             instructorName: 'Prof. Sharma',
-            text: 'Good performance overall, Rahul. Your math calculus questions are sharp, but vectors and rotational dynamics formulas need direct practice.',
-            date: '2026-06-13',
+            text: 'Great work Rahul. Review banking of roads equations before the next mock test.',
+            date: '2026-06-28',
             aiSuggestions: [
-              'Time spent on vectors was high but ended in an error.',
-              'Rotational dynamics: Re-verify formulas.'
+              'Review static friction coefficient parameters.',
+              'Optimize banking velocity formulas.'
             ]
           }
         });
 
-        student.testProgress.push(attempt1._id);
+        student.testProgress = [attempt1._id];
         await student.save();
 
-        // 6. Seed mock tests
-        let testCount = await MockTest.countDocuments();
-        if (testCount === 0) {
-          console.log('[DATABASE] Seeding initial mock tests...');
-          const seededQuestions = await Question.find();
-          const qIds = seededQuestions.map(q => q._id);
-          
-          await MockTest.create({
-            name: 'MHT-CET PCMB Full Syllabus Test 1',
-            duration: 180,
-            subjects: ['Physics', 'Mathematics'],
-            questions: qIds
-          });
-          
-          await MockTest.create({
-            name: 'Physics Special Rotational Dynamics Mock',
-            duration: 90,
-            subjects: ['Physics'],
-            questions: qIds.filter((_, idx) => idx < 2)
-          });
-          console.log('[DATABASE] Mock tests seeded successfully.');
-        }
+        console.log('[DATABASE] Seeding active mock tests...');
+        
+        // 1. First active practice test
+        await MockTest.create({
+          name: 'MHT-CET Full Syllabus Active Practice Exam #1',
+          duration: 180,
+          subjects: ['Physics', 'Mathematics', 'Chemistry'],
+          questions: qIds,
+          isPublished: true,
+          scheduledTime: new Date(Date.now() - 60 * 60 * 1000) // 1 hour ago (Active)
+        });
+
+        // 2. Newly scheduled PCM 50 Test
+        const targetScheduledDate = new Date('2026-06-30T10:49:00+05:30');
+        await MockTest.create({
+          name: 'MHT-CET PCM 50 Full Syllabus Test',
+          duration: 180,
+          subjects: ['Physics', 'Chemistry', 'Mathematics'],
+          questions: qIds,
+          isPublished: true,
+          scheduledTime: targetScheduledDate
+        });
+
+        // Also add calendar event for it
+        await CalendarEvent.create({
+          title: 'MHT-CET PCM 50 Full Syllabus Test (Published Mock)',
+          date: targetScheduledDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+          type: 'Test',
+          subject: 'Physics'
+        });
 
         console.log('[DATABASE] Seeding complete.');
       }
@@ -2202,6 +2222,7 @@ const getDashboardData = async (req, res, next) => {
       accuracyIndex: accuracy,
       streak: user.streak || 0,
       hoursStudied: user.hoursStudied || 0,
+      loginDates: user.loginDates || [],
       tasks: user.tasks.map(t => ({ id: t._id, text: t.text, completed: t.completed })),
       upcomingEvents: upcomingEvents.map(e => ({
         id: e._id,
@@ -2251,75 +2272,214 @@ app.get('/api/test-arena/dashboard/:userId', authMiddleware, async (req, res, ne
         }))
       ]);
     } else {
-      // Offline fallback when database connection is not established
       res.json({
         availableTests: [
           {
-            id: 'mock_test_1',
-            title: 'MHT-CET Full Syllabus Mock Test #4',
+            id: 'active_mock_test_1',
+            title: 'MHT-CET Full Syllabus Practice Exam #1',
             duration: 180,
             subjects: ['Physics', 'Chemistry', 'Mathematics'],
-            scheduledTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 1 day in future
+            scheduledTime: new Date(Date.now() - 60 * 60 * 1000).toISOString() // Active (scheduled 1 hour ago)
           },
           {
-            id: 'mock_test_2',
-            title: 'Mathematics: Vector Algebra & Calculus',
-            duration: 90,
-            subjects: ['Mathematics'],
-            scheduledTime: new Date(Date.now() - 60 * 60 * 1000).toISOString() // 1 hour ago
-          },
-          {
-            id: 'mock_test_3',
-            title: 'Physics & Chemistry: Organic Mechanics & Optics',
-            duration: 90,
-            subjects: ['Physics', 'Chemistry'],
-            scheduledTime: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() // 2 days in future
+            id: 'active_mock_test_pcm_50',
+            title: 'MHT-CET PCM 50 Full Syllabus Test',
+            duration: 180,
+            subjects: ['Physics', 'Chemistry', 'Mathematics'],
+            scheduledTime: new Date('2026-06-30T10:49:00+05:30').toISOString()
           }
         ],
         pastResults: [
           {
             id: 'past_attempt_1',
-            testName: 'MHT-CET Full Syllabus Mock Test #3',
-            score: 148,
-            totalMarks: 200,
-            dateAttempted: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-            accuracy: 74
-          },
-          {
-            id: 'past_attempt_2',
-            testName: 'Mathematics Chapter Drill: Vectors',
-            score: 82,
+            testName: 'MHT-CET Rotational Dynamics Practice Quiz',
+            score: 85,
             totalMarks: 100,
-            dateAttempted: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-            accuracy: 82
-          },
-          {
-            id: 'past_attempt_3',
-            testName: 'Chemistry Practical: Kinetic Formulas',
-            score: 76,
-            totalMarks: 100,
-            dateAttempted: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-            accuracy: 76
-          },
-          {
-            id: 'past_attempt_4',
-            testName: 'Physics Standard: Electrostatics Drill #2',
-            score: 41,
-            totalMarks: 50,
-            dateAttempted: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-            accuracy: 82
-          },
-          {
-            id: 'past_attempt_5',
-            testName: 'MHT-CET Full Syllabus Mock Test #2',
-            score: 124,
-            totalMarks: 200,
-            dateAttempted: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
-            accuracy: 62
+            dateAttempted: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            accuracy: 85
           }
         ]
       });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET Test Attempt PDF Report endpoint
+app.get('/api/attempts/:attemptId/pdf', authMiddleware, async (req, res, next) => {
+  try {
+    const { attemptId } = req.params;
+    
+    let attempt = null;
+    let student = null;
+    
+    if (mongoose.connection.readyState === 1) {
+      attempt = await TestAttempt.findById(attemptId);
+      if (!attempt) {
+        return res.status(404).json({ error: 'Test attempt report not found.' });
+      }
+      student = await User.findById(attempt.student_id);
+    } else {
+      // Mock / fallback attempt for offline testing
+      attempt = {
+        _id: attemptId,
+        test_name: 'MHT-CET Rotational Dynamics Practice Quiz',
+        score: 85,
+        max_score: 100,
+        time_spent_seconds: 2400,
+        accuracy: 85,
+        percentile: 91.2,
+        nationalRank: 102,
+        createdAt: new Date(),
+        responses: [
+          { subject: 'Physics', chapter: 'Rotational Dynamics', selectedOption: 'A', isCorrect: true, timeSpent: 250 },
+          { subject: 'Physics', chapter: 'Rotational Dynamics', selectedOption: 'B', isCorrect: false, timeSpent: 350 },
+          { subject: 'Mathematics', chapter: 'Vectors', selectedOption: 'A', isCorrect: true, timeSpent: 400 }
+        ],
+        ai_analysis: {
+          weak_topics: ['Rotational Dynamics Friction'],
+          time_management_rating: 'Excellent speed control',
+          student_feedback: 'Rahul, strong performance. Review banking of roads friction equations.',
+          parent_feedback: 'Rahul did exceptionally well on this test. Continued revisions are underway.'
+        },
+        feedback: {
+          instructorName: 'Prof. Sharma',
+          text: 'Great work Rahul. Review banking of roads equations before the next mock test.',
+          date: '2026-06-28',
+          aiSuggestions: [
+            'Review static friction coefficient parameters.',
+            'Optimize banking velocity formulas.'
+          ]
+        }
+      };
+      student = { name: 'Rahul Sharma', email: 'rahul@cet.com', prn: 'MHT202612345' };
+    }
+
+    const studentName = student ? student.name : 'Rahul Sharma';
+    const studentEmail = student ? student.email : 'rahul@cet.com';
+    const studentPrn = student ? (student.prn || 'MHT202612345') : 'MHT202612345';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=report_${attemptId}.pdf`);
+
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
+
+    // Header styling
+    doc.fillColor('#0f172a').fontSize(20).text('MHT-CET ACE LMS', { align: 'left' });
+    doc.fillColor('#0284c7').fontSize(12).text('EXAMINATION PERFORMANCE EVALUATION REPORT', { align: 'left' });
+    doc.moveDown(0.5);
+
+    // Draw line
+    doc.strokeColor('#e2e8f0').lineWidth(1.5).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(1);
+
+    // Student & Test Details Table
+    const detailsTop = doc.y;
+    doc.fillColor('#475569').fontSize(10);
+    doc.text(`Student Name: ${studentName}`, 50, detailsTop);
+    doc.text(`Email Address: ${studentEmail}`, 50, detailsTop + 15);
+    doc.text(`Student PRN: ${studentPrn}`, 50, detailsTop + 30);
+
+    doc.text(`Exam Name: ${attempt.test_name}`, 300, detailsTop);
+    doc.text(`Attempt Date: ${new Date(attempt.createdAt || attempt.dateAttempted || Date.now()).toLocaleDateString()}`, 300, detailsTop + 15);
+    doc.text(`Time Spent: ${Math.round(attempt.time_spent_seconds / 60)} minutes`, 300, detailsTop + 30);
+    doc.moveDown(3);
+
+    // Score Metrics Card
+    const cardTop = doc.y;
+    doc.rect(50, cardTop, 500, 70).fill('#f8fafc');
+    doc.rect(50, cardTop, 500, 70).stroke('#cbd5e1');
+
+    doc.fillColor('#0f172a').fontSize(10).text('OBTAINED SCORE', 70, cardTop + 15);
+    doc.fontSize(22).fillColor('#0284c7').text(`${attempt.score} / ${attempt.max_score}`, 70, cardTop + 30);
+
+    doc.fontSize(10).fillColor('#0f172a').text('ACCURACY', 220, cardTop + 15);
+    doc.fontSize(22).fillColor('#16a34a').text(`${attempt.accuracy}%`, 220, cardTop + 30);
+
+    doc.fontSize(10).fillColor('#0f172a').text('PERCENTILE', 330, cardTop + 15);
+    doc.fontSize(22).fillColor('#ea580c').text(`${attempt.percentile || 'N/A'}%ile`, 330, cardTop + 30);
+
+    doc.fontSize(10).fillColor('#0f172a').text('STATE RANK', 440, cardTop + 15);
+    doc.fontSize(22).fillColor('#8b5cf6').text(`#${attempt.nationalRank || 'N/A'}`, 440, cardTop + 30);
+    
+    doc.moveDown(4);
+
+    // AI Analysis & Performance Review
+    doc.fillColor('#0f172a').fontSize(12).text('Performance Assessment & Faculty Insights:', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor('#334155');
+    
+    if (attempt.ai_analysis) {
+      doc.text(`Weak Topics Identified: ${attempt.ai_analysis.weak_topics?.join(', ') || 'None flagged'}`);
+      doc.text(`Time Management Evaluation: ${attempt.ai_analysis.time_management_rating || 'Optimal'}`);
+      doc.moveDown(0.5);
+    }
+    
+    if (attempt.feedback) {
+      doc.fillColor('#0284c7').text(`Instructor Review (${attempt.feedback.instructorName || 'Academic Advisor'}):`);
+      doc.fillColor('#334155').text(`"${attempt.feedback.text || 'Good attempt. Keep practicing simulated tests.'}"`);
+      doc.moveDown(0.5);
+      
+      if (attempt.feedback.aiSuggestions && attempt.feedback.aiSuggestions.length > 0) {
+        doc.fillColor('#0f172a').text('Key Recommendations for Improvement:');
+        attempt.feedback.aiSuggestions.forEach((sug, idx) => {
+          doc.fillColor('#475569').text(`- ${sug}`);
+        });
+      }
+    }
+    doc.moveDown(2);
+
+    // Question Log Table
+    doc.fillColor('#0f172a').fontSize(12).text('Question-wise Response Analytics:', { underline: true });
+    doc.moveDown(0.5);
+
+    // Header Background
+    const tableHeaderTop = doc.y;
+    doc.rect(50, tableHeaderTop, 500, 20).fill('#0284c7');
+    doc.fillColor('#ffffff').fontSize(9);
+    doc.text('Q#', 60, tableHeaderTop + 6);
+    doc.text('Subject', 90, tableHeaderTop + 6);
+    doc.text('Chapter/Topic', 180, tableHeaderTop + 6);
+    doc.text('Choice', 350, tableHeaderTop + 6);
+    doc.text('Status', 420, tableHeaderTop + 6);
+    doc.text('Time Spent', 480, tableHeaderTop + 6);
+    doc.moveDown(1);
+
+    // Rows
+    let currentY = tableHeaderTop + 20;
+    (attempt.responses || []).forEach((resp, idx) => {
+      // Draw grid line
+      doc.strokeColor('#f1f5f9').lineWidth(1).moveTo(50, currentY).lineTo(550, currentY).stroke();
+      
+      doc.fillColor('#334155').fontSize(9);
+      doc.text(`${idx + 1}`, 60, currentY + 5);
+      doc.text(`${resp.subject || 'N/A'}`, 90, currentY + 5);
+      doc.text(`${resp.chapter || 'General'}`, 180, currentY + 5);
+      doc.text(`${resp.selectedOption || 'Skipped'}`, 350, currentY + 5);
+      
+      if (resp.isCorrect) {
+        doc.fillColor('#16a34a').text('CORRECT', 420, currentY + 5);
+      } else if (!resp.selectedOption) {
+        doc.fillColor('#64748b').text('SKIPPED', 420, currentY + 5);
+      } else {
+        doc.fillColor('#dc2626').text('INCORRECT', 420, currentY + 5);
+      }
+      
+      doc.fillColor('#334155').text(`${resp.timeSpent || 30} sec`, 480, currentY + 5);
+      currentY += 18;
+    });
+
+    // Footer Signature
+    doc.moveDown(2);
+    const footerY = doc.y;
+    if (footerY < 720) {
+      doc.strokeColor('#cbd5e1').lineWidth(1).moveTo(50, 720).lineTo(550, 720).stroke();
+      doc.fontSize(8).fillColor('#94a3b8').text('This performance report is generated automatically by MHT-CET Ace LMS Platform.', 50, 730, { align: 'center' });
+    }
+
+    doc.end();
   } catch (err) {
     next(err);
   }

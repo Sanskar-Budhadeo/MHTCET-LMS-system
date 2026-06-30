@@ -76,7 +76,50 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [questions, setQuestions] = useState<Question[]>(() => {
     const saved = localStorage.getItem('mht_cet_questions');
-    return saved ? JSON.parse(saved) : initialQuestions;
+    const baseList = saved ? JSON.parse(saved) : [...initialQuestions];
+    
+    if (!baseList.some((q: any) => q.id === 'q_off_1')) {
+      const physicsChapters = ['Rotational Dynamics', 'Oscillations', 'Electrostatics', 'Wave Optics'];
+      const chemistryChapters = ['Chemical Kinetics', 'Solid State', 'Coordination Compounds'];
+      const mathChapters = ['Vectors', 'Trigonometric Functions', 'Probability Distributions'];
+
+      for (let i = 1; i <= 50; i++) {
+        let subject = '';
+        let chapter = '';
+        let correctOptionIdx = i % 4; // A=0, B=1, C=2, D=3
+        let qMarks = 1;
+        
+        if (i <= 17) {
+          subject = 'Physics';
+          chapter = physicsChapters[i % physicsChapters.length];
+        } else if (i <= 34) {
+          subject = 'Chemistry';
+          chapter = chemistryChapters[i % chemistryChapters.length];
+        } else {
+          subject = 'Mathematics';
+          chapter = mathChapters[i % mathChapters.length];
+          qMarks = 2;
+        }
+
+        baseList.push({
+          id: `q_off_${i}`,
+          subject: subject as any,
+          topic: chapter,
+          difficulty: i % 3 === 0 ? 'Hard' : i % 3 === 1 ? 'Medium' : 'Easy',
+          question: `PCM Full Syllabus Practice Question #${i}: What is the standard concept and equation in ${subject} chapter ${chapter}?`,
+          options: [
+            `Option A for Q${i}`, 
+            `Option B for Q${i}`, 
+            `Option C for Q${i}`, 
+            `Option D for Q${i}`
+          ],
+          correctAnswer: correctOptionIdx,
+          explanation: `This is a standard explanation for ${subject} ${chapter} concept.`,
+          marks: qMarks
+        });
+      }
+    }
+    return baseList;
   });
 
   const [mockTests, setMockTests] = useState<MockTest[]>(() => {
@@ -599,7 +642,9 @@ export const LmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               text: attempt.feedback?.text || attempt.ai_analysis?.student_feedback || '',
               date: attempt.feedback?.date || (attempt.createdAt ? attempt.createdAt.split('T')[0] : ''),
               aiSuggestions: aiSuggestions
-            }
+            },
+            percentile: attempt.percentile,
+            nationalRank: attempt.nationalRank
           };
         });
         setAttempts(mapped);

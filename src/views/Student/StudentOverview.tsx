@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLms } from '../../context/LmsContext';
-import { Flame, Trophy, Award, Calendar, CheckSquare, Sparkles, Plus, Trash2, Zap } from 'lucide-react';
+import { Flame, Trophy, Award, Calendar, CheckSquare, Sparkles, Plus, Trash2, Zap, Clock } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 
 // Custom lightweight Axios wrapper to prevent package installation issues (ACL permissions)
 const axios = {
@@ -82,6 +83,7 @@ interface DashboardData {
     math: SyllabusSubject;
   };
   rank: number;
+  loginDates?: string[];
 }
 
 // ----------------------------------------------------
@@ -166,67 +168,132 @@ export const TasksChecklist: React.FC<TasksChecklistProps> = ({
 // ----------------------------------------------------
 // Sub-component 2: Subject-Wise Progress Tracker
 // ----------------------------------------------------
-interface SyllabusProgressBarsProps {
-  syllabusProgress: {
-    physics: SyllabusSubject;
-    chemistry: SyllabusSubject;
-    math: SyllabusSubject;
-  };
+interface WeeklyHoursChartProps {
+  hoursStudied: number;
+  loginDates: string[];
 }
 
-export const SyllabusProgressBars: React.FC<SyllabusProgressBarsProps> = ({ syllabusProgress }) => {
+export const WeeklyHoursChart: React.FC<WeeklyHoursChartProps> = ({ hoursStudied, loginDates }) => {
+  // Generate last 7 days list
+  const getLast7Days = () => {
+    const days = [];
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      days.push({
+        dateStr: d.toISOString().split('T')[0],
+        dayName: weekdayNames[d.getDay()],
+        rawDate: d
+      });
+    }
+    return days;
+  };
+
+  const days = getLast7Days();
+  
+  // Calculate weights based on logins & days
+  const weights = days.map(d => {
+    const isToday = d.dateStr === new Date().toISOString().split('T')[0];
+    const isLoginDay = loginDates.includes(d.dateStr);
+    if (isToday) return 1.5;
+    if (isLoginDay) return 1.0;
+    const dayOfWeek = d.rawDate.getDay();
+    const mockWeight = [0.2, 0.8, 1.2, 0.7, 0.9, 1.4, 0.5][dayOfWeek];
+    return mockWeight;
+  });
+
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  const data = days.map((d, idx) => {
+    const hours = (weights[idx] / totalWeight) * hoursStudied;
+    return {
+      day: d.dayName,
+      hours: parseFloat(hours.toFixed(1)),
+      date: d.dateStr
+    };
+  });
+
+  const weeklyTotal = parseFloat(hoursStudied.toFixed(1));
+  const dailyAverage = parseFloat((hoursStudied / 7).toFixed(1));
+
+  // Premium Custom Tooltip Component
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-[var(--bg-card)] border border-[var(--border)] p-3 rounded-xl shadow-xl text-xs font-semibold text-[var(--text-main)]">
+          <p className="text-[var(--text-muted)] text-[10px] uppercase font-bold tracking-wider mb-1">
+            {payload[0].payload.day}, {payload[0].payload.date}
+          </p>
+          <p className="flex items-center gap-1.5 text-[#e2fc5c] font-black text-sm">
+            <Clock className="w-3.5 h-3.5" /> {payload[0].value} hrs
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl p-6 shadow-lg flex flex-col gap-6">
-      <h2 className="text-sm font-bold text-[var(--text-main)] flex items-center gap-2 border-b border-[var(--border)] pb-3">
-        <span className="text-[#e2fc5c]">🕮</span> MHT-CET PCMB Syllabus Tracker
-      </h2>
-      <div className="flex flex-col gap-6">
-        
-        {/* Physics */}
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="bg-sky-500/10 text-sky-400 px-3 py-1 rounded-full text-[10px] font-bold tracking-wide">
-              PHYSICS
-            </span>
-            <span className="text-[var(--text-muted)] text-xs font-semibold">
-              {syllabusProgress.physics.mastered}/{syllabusProgress.physics.total} Qs Correct ({syllabusProgress.physics.percentage}%)
-            </span>
+    <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl p-6 shadow-lg flex flex-col justify-between min-h-[360px]">
+      <div>
+        <div className="flex justify-between items-start border-b border-[var(--border)] pb-3 mb-4">
+          <div>
+            <h2 className="text-sm font-bold text-[var(--text-main)] flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[#e2fc5c]" /> Weekly Activity Tracker
+            </h2>
+            <p className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5">
+              Active learning time spent on the application
+            </p>
           </div>
-          <div className="w-full bg-[var(--bg-app)] border border-[var(--border)] h-2.5 rounded-full mt-1.5">
-            <div className="h-full rounded-full transition-all duration-500 bg-sky-500" style={{ width: `${syllabusProgress.physics.percentage}%` }} />
-          </div>
-        </div>
-
-        {/* Chemistry */}
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="bg-amber-500/10 text-amber-400 px-3 py-1 rounded-full text-[10px] font-bold tracking-wide">
-              CHEMISTRY
-            </span>
-            <span className="text-[var(--text-muted)] text-xs font-semibold">
-              {syllabusProgress.chemistry.mastered}/{syllabusProgress.chemistry.total} Qs Correct ({syllabusProgress.chemistry.percentage}%)
-            </span>
-          </div>
-          <div className="w-full bg-[var(--bg-app)] border border-[var(--border)] h-2.5 rounded-full mt-1.5">
-            <div className="h-full rounded-full transition-all duration-500 bg-amber-500" style={{ width: `${syllabusProgress.chemistry.percentage}%` }} />
+          <div className="flex items-center gap-4 text-right">
+            <div>
+              <span className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Weekly Total</span>
+              <div className="text-sm font-black text-[#e2fc5c]">{weeklyTotal} hrs</div>
+            </div>
+            <div>
+              <span className="text-[9px] uppercase font-bold text-[var(--text-muted)] tracking-wider">Daily Avg</span>
+              <div className="text-sm font-black text-[var(--text-main)]">{dailyAverage} hrs</div>
+            </div>
           </div>
         </div>
 
-        {/* Mathematics */}
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="bg-fuchsia-500/10 text-fuchsia-400 px-3 py-1 rounded-full text-[10px] font-bold tracking-wide">
-              MATHEMATICS
-            </span>
-            <span className="text-[var(--text-muted)] text-xs font-semibold">
-              {syllabusProgress.math.mastered}/{syllabusProgress.math.total} Qs Correct ({syllabusProgress.math.percentage}%)
-            </span>
-          </div>
-          <div className="w-full bg-[var(--bg-app)] border border-[var(--border)] h-2.5 rounded-full mt-1.5">
-            <div className="h-full rounded-full transition-all duration-500 bg-fuchsia-500" style={{ width: `${syllabusProgress.math.percentage}%` }} />
-          </div>
+        {/* Recharts Bar Chart */}
+        <div className="w-full h-56 mt-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 10, right: 5, left: -25, bottom: 5 }}>
+              <XAxis 
+                dataKey="day" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: 'var(--text-light)', fontSize: 10, fontWeight: 700 }}
+              />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: 'var(--text-light)', fontSize: 10, fontWeight: 700 }}
+                allowDecimals={true}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }} />
+              <Bar 
+                dataKey="hours" 
+                radius={[8, 8, 0, 0]}
+              >
+                {data.map((entry, index) => {
+                  const isToday = entry.date === new Date().toISOString().split('T')[0];
+                  return (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={isToday ? '#e2fc5c' : '#22d3ee'} 
+                      opacity={isToday ? 1.0 : 0.75}
+                      className="hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                    />
+                  );
+                })}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-
       </div>
     </div>
   );
@@ -606,9 +673,12 @@ export const StudentOverview: React.FC = () => {
       {/* 2. Action Center & Tracker Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Column: MHT-CET PCMB Syllabus Tracker Sub-component */}
+        {/* Left Column: Weekly Hours Spent Sub-component */}
         <div className="lg:col-span-7">
-          <SyllabusProgressBars syllabusProgress={syllabusProgress} />
+          <WeeklyHoursChart 
+            hoursStudied={hoursStudied} 
+            loginDates={dashboardData?.loginDates || activeUser?.loginDates || []} 
+          />
         </div>
 
         {/* Right Column: Goals & Tasks Checklist Sub-component */}

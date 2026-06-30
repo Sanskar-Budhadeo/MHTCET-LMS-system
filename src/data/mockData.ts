@@ -38,6 +38,9 @@ export interface TestAttempt {
     date: string;
     aiSuggestions: string[];
   };
+  percentile?: number;
+  nationalRank?: number;
+  examType?: string;
 }
 
 export interface MockTest {
