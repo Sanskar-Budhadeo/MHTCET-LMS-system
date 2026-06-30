@@ -357,3 +357,56 @@ const AuditLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const AuditLog = mongoose.model('AuditLog', AuditLogSchema);
+
+const InstituteSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  institute_code: { type: String, required: true, unique: true },
+  address: { type: String }
+}, { timestamps: true });
+
+export const Institute = mongoose.model('Institute', InstituteSchema);
+
+const StudentProfileSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  institute_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Institute' },
+  roll_number: { type: String },
+  grade: { type: String }
+}, { timestamps: true });
+
+export const StudentProfile = mongoose.model('StudentProfile', StudentProfileSchema);
+
+const TestSchema = new mongoose.Schema({
+  test_name: { type: String, required: true },
+  test_type: { 
+    type: String, 
+    required: true, 
+    enum: ['FULL_SYLLABUS', 'CHAPTER_WISE_PART_TEST', 'SUBJECT_WISE_PART_TEST'] 
+  },
+  exam_id: { type: String, required: true },
+  duration_minutes: { type: Number, required: true },
+  total_questions: { type: Number, required: true },
+  total_marks: { type: Number, required: true },
+  start_time: { type: Date, required: true },
+  end_time: { type: Date, required: true },
+  is_published: { type: Boolean, default: false },
+  created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  questions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }]
+}, { timestamps: true });
+
+export const Test = mongoose.model('Test', TestSchema);
+
+const TestSubjectSchema = new mongoose.Schema({
+  test_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Test', required: true },
+  subject: { 
+    type: String, 
+    required: true, 
+    enum: ['Physics', 'Chemistry', 'Mathematics', 'Biology'] 
+  },
+  chapters: [{ type: String }],
+  total_questions: { type: Number, required: true },
+  marks_per_correct: { type: Number, required: true },
+  negative_marks: { type: Number, default: 0 }
+}, { timestamps: true });
+
+export const TestSubject = mongoose.model('TestSubject', TestSubjectSchema);
+

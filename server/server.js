@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'url';
-import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent, AuditLog } from './models.js';
+import { Question, TestAttempt, User, Note, MockTest, AIUsageLog, SystemAlert, CalendarEvent, AuditLog, Test, TestSubject, Institute, StudentProfile } from './models.js';
 import { GoogleGenAI } from '@google/genai';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -1954,10 +1954,19 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
   }
 
   try {
-    const test = await MockTest.findById(testId).populate('questions');
+    let test = await MockTest.findById(testId).populate('questions');
+    let isScheduledTest = false;
     if (!test) {
-      return res.status(404).json({ error: 'Mock test not found.' });
+      test = await Test.findById(testId).populate('questions');
+      isScheduledTest = true;
     }
+
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found.' });
+    }
+
+    const testName = isScheduledTest ? test.test_name : test.name;
+    const examType = isScheduledTest ? test.exam_id : (test.subjects.includes('Biology') ? 'NEET' : 'MHT-CET');
 
     let score = 0;
     let maxScore = 0;
@@ -2000,8 +2009,8 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
 
     const attempt = await TestAttempt.create({
       student_id: studentId,
-      test_name: test.name,
-      examType: test.subjects.includes('Biology') ? 'NEET' : 'MHT-CET',
+      test_name: testName,
+      examType: examType,
       score: score,
       max_score: maxScore,
       time_spent_seconds: timeSpent || 0,
@@ -2026,7 +2035,7 @@ app.post('/api/tests/submit', authMiddleware, async (req, res, next) => {
     if (updatedUser) {
       await AuditLog.create({
         action: 'Exam Submitted',
-        details: `Student "${updatedUser.name}" submitted Mock Test "${test.name}" scoring ${score}/${maxScore} (${accuracy}% accuracy).`
+        details: `Student "${updatedUser.name}" submitted Mock Test "${testName}" scoring ${score}/${maxScore} (${accuracy}% accuracy).`
       });
     }
 
@@ -2414,7 +2423,7 @@ app.get('/api/test-arena/dashboard/:userId', authMiddleware, async (req, res, ne
           dateAttempted: a.createdAt,
           accuracy: a.accuracy
         }))
-      ]);
+      });
     } else {
       res.json({
         availableTests: [
@@ -2975,6 +2984,335 @@ app.post('/api/teacher/schedule-test', authMiddleware, async (req, res, next) =>
     next(err);
   }
 });
+
+// Create scheduled test (Faculty / Admin only)
+app.post('/api/faculty/create-test', authMiddleware, async (req, res, next) => {
+  try {
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole !== 'TEACHER' && userRole !== 'ADMIN' && userRole !== 'FACULTY') {
+      return res.status(403).json({ error: 'Access forbidden: Faculty or Admin role required.' });
+    }
+
+    const {
+      test_name,
+      test_type,
+      exam_id,
+      duration_minutes,
+      total_questions,
+      total_marks,
+      start_time,
+      end_time,
+      is_published,
+      subject,
+      chapters,
+      marks_per_correct,
+      negative_marks
+    } = req.body;
+
+    if (!test_name || !test_type || !exam_id || !duration_minutes || !total_questions || !total_marks || !start_time || !end_time || !subject) {
+      return res.status(400).json({ error: 'Missing required test fields.' });
+    }
+
+    const start = new Date(start_time);
+    const end = new Date(end_time);
+
+    if (start >= end) {
+      return res.status(400).json({ error: 'Start time must be before end time.' });
+    }
+
+    if (start < new Date()) {
+      return res.status(400).json({ error: 'Test start time cannot be in the past.' });
+    }
+
+    // Dynamic question selection/generation based on subject and targeted chapters
+    let query = { subject };
+    if (chapters && chapters.length > 0) {
+      query.chapter = { $in: chapters };
+    }
+
+    let questions = [];
+    if (mongoose.connection.readyState === 1) {
+      questions = await Question.find(query);
+      if (questions.length < total_questions) {
+        // Fall back to subject-only search
+        const backupQuestions = await Question.find({ subject });
+        // Merge without duplicates
+        const existingIds = new Set(questions.map(q => q._id.toString()));
+        backupQuestions.forEach(q => {
+          if (!existingIds.has(q._id.toString())) {
+            questions.push(q);
+          }
+        });
+      }
+    }
+
+    // Take up to total_questions
+    let selectedQuestions = questions.slice(0, total_questions);
+    
+    // If not enough questions exist in database, generate mock questions to fulfill total_questions
+    while (selectedQuestions.length < total_questions) {
+      const idx = selectedQuestions.length + 1;
+      const mockQ = {
+        _id: new mongoose.Types.ObjectId(),
+        subject: subject,
+        chapter: (chapters && chapters.length > 0) ? chapters[idx % chapters.length] : 'General',
+        difficulty: idx % 3 === 0 ? 'Hard' : idx % 3 === 1 ? 'Medium' : 'Easy',
+        question_text: `Mock Question #${idx} for subject ${subject}: Explain the standard theorem and evaluate.`,
+        options: {
+          A: `Option A for Mock Q${idx}`,
+          B: `Option B for Mock Q${idx}`,
+          C: `Option C for Mock Q${idx}`,
+          D: `Option D for Mock Q${idx}`
+        },
+        correct_option: ['A', 'B', 'C', 'D'][idx % 4],
+        explanation: 'Detailed concept review and derivation for this topic.',
+        generated_by: 'ai'
+      };
+      
+      if (mongoose.connection.readyState === 1) {
+        // Optionally save the generated mock question to the db
+        const createdMockQ = await Question.create(mockQ);
+        selectedQuestions.push(createdMockQ);
+      } else {
+        selectedQuestions.push(mockQ);
+      }
+    }
+
+    const selectedQuestionIds = selectedQuestions.map(q => q._id);
+
+    let createdTest;
+    let createdTestSubject;
+
+    if (mongoose.connection.readyState === 1) {
+      const session = await mongoose.startSession();
+      try {
+        session.startTransaction();
+        
+        const testObj = {
+          test_name,
+          test_type,
+          exam_id,
+          duration_minutes: Number(duration_minutes),
+          total_questions: Number(total_questions),
+          total_marks: Number(total_marks),
+          start_time: start,
+          end_time: end,
+          is_published: is_published !== undefined ? !!is_published : false,
+          created_by: req.user.id,
+          questions: selectedQuestionIds
+        };
+
+        const testRes = await Test.create([testObj], { session });
+        createdTest = testRes[0];
+
+        const testSubjectObj = {
+          test_id: createdTest._id,
+          subject,
+          chapters: chapters || [],
+          total_questions: Number(total_questions),
+          marks_per_correct: Number(marks_per_correct),
+          negative_marks: Number(negative_marks || 0)
+        };
+
+        const subjectRes = await TestSubject.create([testSubjectObj], { session });
+        createdTestSubject = subjectRes[0];
+
+        await session.commitTransaction();
+      } catch (txErr) {
+        await session.abortTransaction();
+        // Fallback to coordinated write if transaction fails due to replica set constraints
+        const testObj = new Test({
+          test_name,
+          test_type,
+          exam_id,
+          duration_minutes: Number(duration_minutes),
+          total_questions: Number(total_questions),
+          total_marks: Number(total_marks),
+          start_time: start,
+          end_time: end,
+          is_published: is_published !== undefined ? !!is_published : false,
+          created_by: req.user.id,
+          questions: selectedQuestionIds
+        });
+        createdTest = await testObj.save();
+
+        try {
+          const testSubjectObj = new TestSubject({
+            test_id: createdTest._id,
+            subject,
+            chapters: chapters || [],
+            total_questions: Number(total_questions),
+            marks_per_correct: Number(marks_per_correct),
+            negative_marks: Number(negative_marks || 0)
+          });
+          createdTestSubject = await testSubjectObj.save();
+        } catch (subjectErr) {
+          await Test.findByIdAndDelete(createdTest._id);
+          throw subjectErr;
+        }
+      } finally {
+        session.endSession();
+      }
+
+      // Add CalendarEvent
+      const eventTitle = `${test_name} (Scheduled)`;
+      const eventDate = start.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      await CalendarEvent.create({
+        title: eventTitle,
+        date: eventDate,
+        type: 'Test',
+        subject: subject
+      });
+
+      // Notify all matching students
+      const students = await User.find({ role: 'student', targetExam: exam_id });
+      for (const student of students) {
+        await SystemAlert.create({
+          recipientId: student._id,
+          message: `New scheduled test "${test_name}" has been created for ${eventDate}. Check your Test Arena!`,
+          type: 'info'
+        });
+      }
+    } else {
+      // Offline fallback mock creation
+      createdTest = {
+        _id: 'offline_test_' + Math.random().toString(36).substring(2, 9),
+        test_name,
+        test_type,
+        exam_id,
+        duration_minutes: Number(duration_minutes),
+        total_questions: Number(total_questions),
+        total_marks: Number(total_marks),
+        start_time: start,
+        end_time: end,
+        is_published: is_published !== undefined ? !!is_published : false,
+        created_by: req.user.id,
+        questions: selectedQuestionIds
+      };
+      createdTestSubject = {
+        test_id: createdTest._id,
+        subject,
+        chapters: chapters || [],
+        total_questions: Number(total_questions),
+        marks_per_correct: Number(marks_per_correct),
+        negative_marks: Number(negative_marks || 0)
+      };
+    }
+
+    res.status(201).json({
+      success: true,
+      test: createdTest,
+      subjectDetails: createdTestSubject
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET all created tests (Faculty / Admin only)
+app.get('/api/faculty/created-tests', authMiddleware, async (req, res, next) => {
+  try {
+    const userRole = (req.user.role || '').toUpperCase();
+    if (userRole !== 'TEACHER' && userRole !== 'ADMIN' && userRole !== 'FACULTY') {
+      return res.status(403).json({ error: 'Access forbidden: Faculty or Admin role required.' });
+    }
+
+    if (mongoose.connection.readyState === 1) {
+      const tests = await Test.find({}).sort({ createdAt: -1 }).populate('questions').lean();
+      const testIds = tests.map(t => t._id);
+      const subjects = await TestSubject.find({ test_id: { $in: testIds } }).lean();
+      
+      const result = tests.map(t => {
+        const sub = subjects.find(s => s.test_id.toString() === t._id.toString());
+        return {
+          id: t._id,
+          title: t.test_name,
+          test_name: t.test_name,
+          test_type: t.test_type,
+          exam_id: t.exam_id,
+          duration: t.duration_minutes,
+          total_questions: t.total_questions,
+          total_marks: t.total_marks,
+          start_time: t.start_time,
+          end_time: t.end_time,
+          is_published: t.is_published,
+          questions: t.questions,
+          subjects: sub ? [sub.subject] : [],
+          subjectDetails: sub || null
+        };
+      });
+      res.json(result);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET all available tests for the logged-in student matches their exam type (Student only)
+app.get('/api/student/available-tests', authMiddleware, async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const student = await User.findById(req.user.id);
+      if (!student) {
+        return res.status(404).json({ error: 'Student not found.' });
+      }
+
+      const targetExam = student.targetExam || 'MHT-CET';
+
+      // Find published tests for this exam
+      const tests = await Test.find({ is_published: true, exam_id: targetExam })
+        .populate('questions')
+        .lean();
+
+      const testIds = tests.map(t => t._id);
+      const subjects = await TestSubject.find({ test_id: { $in: testIds } }).lean();
+
+      const result = tests.map(t => {
+        const sub = subjects.find(s => s.test_id.toString() === t._id.toString());
+        return {
+          id: t._id,
+          title: t.test_name,
+          test_type: t.test_type,
+          duration: t.duration_minutes,
+          total_questions: t.total_questions,
+          total_marks: t.total_marks,
+          start_time: t.start_time,
+          end_time: t.end_time,
+          scheduledTime: t.start_time,
+          is_published: t.is_published,
+          created_by: t.created_by,
+          questions: t.questions,
+          subjects: sub ? [sub.subject] : [],
+          subjectDetails: sub || null
+        };
+      });
+
+      res.json(result);
+    } else {
+      // Offline fallback available tests
+      res.json([
+        {
+          id: 'offline_mock_test_1',
+          title: 'MHT-CET Full Syllabus Practice Exam #1',
+          test_type: 'FULL_SYLLABUS',
+          duration: 180,
+          total_questions: 50,
+          total_marks: 100,
+          start_time: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+          end_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+          scheduledTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+          subjects: ['Physics', 'Chemistry', 'Mathematics'],
+          questions: []
+        }
+      ]);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 // Generate Student AI Performance Report (Teacher / Admin only)
 app.post('/api/teacher/generate-report', authMiddleware, async (req, res, next) => {
